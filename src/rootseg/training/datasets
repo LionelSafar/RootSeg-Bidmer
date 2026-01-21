@@ -1,0 +1,325 @@
+import math
+from typing import Tuple, Iterator, List
+
+import cv2
+import imageio
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import Dataset
+
+from rootseg.training.augmentations import Augmenter
+
+
+def read_images(
+        paths: List[str], 
+        annots: bool = False,  
+        as_tensor: bool = False
+)-> List[np.ndarray | torch.Tensor]:
+    """
+    read images collectively from a list of image paths and return them as a list.
+
+    Args:
+        paths (List[str]): absolute image paths
+        annots (bool): If True, ensures images are grayscale with unique values {0, 255}, but with channel axis
+        as_tensor (bool): If True, returns images as torch.Tensor, else as np.ndarray
+
+    Returns:
+        List[np.ndarray | torch.Tensor]: List of images, either as np.ndarray or torch.Tensor.
+    """
+    images = []
+    for path in paths:
+        img = imageio.v2.imread(path)
+        if len(img.shape) == 2:
+            img = img[..., np.newaxis]
+        if annots: # currently case with GIMP images
+            if img.shape[2] > 1:
+                img = img[..., :3]
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = (img > 0.5).astype(np.uint8) * 255
+                img = img[..., np.newaxis]
+        images.append(img)
+    images = np.array(images)
+    if as_tensor:
+        return torch.from_numpy(images)
+    else:
+        return images
+
+
+class TrainDataset_torch(Dataset):
+    """
+    Training dataset class, that loads in the preprocessed and annotated images and dynamically
+    creates subimages of randomly selected regions per image and augments them.
+
+    Args:
+        X_train_paths (List[str]): list of training input images
+        y_train_paths (List[str]): list of training ground truth images (sorted the same as input)
+        N_subimgs (int): Number of random-cropped subimages per training image per epoch
+        multiclass (bool): Whether the model is trained on binary- or multiclass-classification
+        imgsize (int): Size of random-cropped subimages (model input size)
+        outsize (int): Size of model output (will pad image borders based on the difference to imgsize)
+        crop_annot (bool): Whether to crop the annotations directly to outsize or not
+
+    """
+    def __init__(
+        self, 
+        X_train_paths: List[str], 
+        y_train_paths: List[str], 
+        N_subimgs: int=40, 
+        multiclass: bool=False, 
+        imgsize: int=572, 
+        outsize: int=388, 
+        crop_annot: bool=True
+    ):
+        self.multiclass = multiclass
+        self.imgsize = imgsize
+        self.outsize = outsize
+        self.pad = (imgsize-outsize)//2
+        self.X, self.y = self._get_images(X_train_paths, y_train_paths)
+        self.N = self.X.shape[0]
+        self.n = N_subimgs
+        self.crop_annot = crop_annot
+        self.augment = Augmenter(norm2=True) 
+    
+    def _get_images(self, X_paths, y_paths):
+        """Prepare Training images"""
+        X = read_images(X_paths, as_tensor=True)
+        if self.multiclass:
+            y = read_images(y_paths, as_tensor=True)
+        else:
+            y = read_images(y_paths, annots=True, as_tensor=True)
+        if self.pad > 0: # Pad image borders based on input-output difference of the models
+            X = F.pad(X, (0, 0, self.pad, self.pad, self.pad, self.pad), mode='reflect')
+            y = F.pad(y, (0, 0, self.pad, self.pad, self.pad, self.pad), mode='reflect')
+        if self.multiclass: # muliclass case -> values are {0, 1, 2, ..}
+            y = y.to(torch.float16)
+        else: # binary case
+            y = (y>0).to(torch.float16)
+        X = X.to(torch.float32)
+        return X, y
+    
+    def _random_crop(self, idx: int, n_tries: int=2) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Perform random crop with possible repeat based on how many roots are present to address class imbalance
+        between roots and non-roots.
+
+        Args:
+            idx (int): image id selected by the dataloader
+            n_tries (int): maximum number of tries for random crop - except if no image contained roots
+        """
+        idx_img = idx // self.n
+
+        best_subimg = None
+        best_subannot = None
+        best_sum = -1
+
+        tries = 0
+        score = 0
+
+        # Sample n_tries times (or more if no roots are in the crop) and select image pair with most roots
+        # NOTE: For multiclass the procedure is the same - only considers roots but does not weigh different
+        # root classes differently (should be addressed in future in case of heavy class imbalance)
+        while tries < n_tries or score <= 0:
+            x = torch.randint(0, self.X.shape[2] - self.imgsize + 1, (1,)).item()
+            y = torch.randint(0, self.X.shape[1] - self.imgsize + 1, (1,)).item()
+
+            subimg = self.X[idx_img, y:y+self.imgsize, x:x+self.imgsize, :]
+            subannot = self.y[idx_img, y:y+self.imgsize, x:x+self.imgsize, :]
+
+            if self.pad > 0:
+                score = torch.sum((subannot[self.pad:-self.pad, self.pad:-self.pad, :]>0)).item()
+            else:
+                score = torch.sum((subannot>0)).item()
+            tries += 1
+            if score > best_sum:
+                best_sum = score
+                best_subimg = subimg
+                best_subannot = subannot
+
+        return best_subimg, best_subannot
+
+    def __len__(self):
+        """N images * n subimages"""
+        return self.N * self.n
+    
+    def __getitem__(self, idx: int):
+        """"Random crops selected image and augments it"""
+        subimage, subannot = self._random_crop(idx)
+        if self.augment is not None:
+            subimage, subannot = self.augment(subimage, subannot)
+
+        # Switch axes from (H, W, C) -> (C, H, W)
+        subimage = subimage.permute(2, 0, 1)
+        subannot = subannot.permute(2, 0, 1)
+        if self.pad > 0 and self.crop_annot:
+            subannot = subannot[:, self.pad:-self.pad, self.pad:-self.pad]
+        return subimage, subannot
+
+
+class ValDataset_torch(Dataset):
+    """
+    Validation dataset class, that loads in the preprocessed and annotated images and dynamically
+    creates subimages of randomly selected regions per image and augments them.
+
+    Args:
+        X_val_paths (List[str]): list of validation input images
+        y_val_paths (List[str]): list of validation ground truth images (sorted the same as input)
+        multiclass (bool): Whether the model is trained on binary- or multiclass-classification
+        imgsize (int): Size of random-cropped subimages (model input size)
+        outsize (int): Size of model output (will pad image borders based on the difference to imgsize)
+        crop_annot (bool): Whether to crop the annotations directly to outsize or not
+    
+    """
+    def __init__(
+            self, 
+            X_val_paths: List[str], 
+            y_val_paths: List[str], 
+            multiclass: bool=False, 
+            imgsize: int=572, 
+            outsize: int=388, 
+            crop_annot: bool=True
+    ):
+        self.multiclass = multiclass
+        self.imgsize = imgsize
+        self.outsize = outsize
+        self.pad = (self.imgsize-self.outsize)//2
+        self.crop_annot = crop_annot
+
+        self.X, self.y = self._prepare_validation_images(X_val_paths, y_val_paths)
+
+
+    def _prepare_validation_images(self, img_paths: List[str], annot_paths: List[str]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Prepares validation images by tiling up the images based on the provided sizes.
+        """
+        imgs = read_images(img_paths, as_tensor=True)
+        if self.multiclass:
+            annots = read_images(annot_paths, as_tensor=True)
+            annots.to(torch.float16)
+        else:
+            annots = read_images(annot_paths, annots=True, as_tensor=True)
+            annots = (annots>0).to(torch.float16)
+
+        imgs = imgs.to(torch.float32)
+
+        # Get amount of images in horizontal and vertical direction per large image
+        h_count = math.ceil(imgs.shape[2] / self.outsize)
+        v_count = math.ceil(imgs.shape[1] / self.outsize)
+
+        # Leftover padding
+        h_pad = h_count * self.outsize - imgs.shape[2]
+        v_pad = v_count * self.outsize - imgs.shape[1]
+
+        imgs = F.pad(imgs, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode='reflect')
+        annots = F.pad(annots, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode='reflect')
+
+        # From (N, H, W, C) -> (N, (H-imgsize)/outsize +1, (W-imgsize)/outsize +1, C, imgsize, imgsize) 
+        # -> (N, N_H, N_W, C, h, w)
+        imgs = imgs.unfold(
+            dimension=1, size=self.imgsize, step=self.outsize
+            ).unfold(2, self.imgsize, self.outsize)
+        N, Ny, Nx, C, h, w = imgs.shape
+        imgs = imgs.reshape(N*Ny*Nx, C, h, w)
+        imgs = imgs.permute(0, 2, 3, 1) # (N_tot, h, w, C)
+        annots = annots.unfold(
+            1, self.imgsize, self.outsize
+            ).unfold(2, self.imgsize, self.outsize
+            ).reshape(N*Ny*Nx, 1, h, w
+            ).permute(0, 2, 3, 1)
+
+        return imgs, annots
+
+    def __len__(self):
+        return self.X.shape[0]
+    
+    def __getitem__(self, idx):
+        subimage = self.X[idx, ...]
+        subannot = self.y[idx, ...]
+
+        if self.pad > 0 and self.crop_annot:
+            subannot = subannot[self.pad:-self.pad, self.pad:-self.pad]
+        
+        # Put images in range [0, 1]
+        subimage = (subimage - subimage.min()) / (subimage.max() - subimage.min())
+        subimage = subimage.permute(2, 0, 1)
+        subannot = subannot.permute(2, 0, 1)
+        
+        return subimage, subannot
+    
+
+class PrefetchWrapper:
+    """
+    Dataloader wrapper that allows prefetching batches and queueing them on device to overlap data loading and
+    computation.
+
+    Args:
+        loader (torch.utils.data.DataLoader): DataLoader iterator
+        device (torch.device): ("cuda" or "cpu")
+        prefetch_size: number of batches to prefetch
+    """
+    def __init__(
+            self, 
+            loader: torch.utils.data.DataLoader, 
+            device: torch.device, 
+            prefetch_size: int=2
+    ):
+        self.loader = loader
+        self.prefetch_size = prefetch_size
+        self.device = device
+
+    def _prefetch_to_device(
+            loader: torch.utils.data.DataLoader, 
+            device: torch.device, 
+            prefetch_size: int=2
+    ) -> Iterator:
+        """main prefetching logic"""
+        queue = []
+        loader_iter = iter(loader)
+
+        # Preload prefetch_size batches
+        for _ in range(prefetch_size):
+            try:
+                batch = next(loader_iter)
+                if isinstance(batch, (tuple, list)):
+                    batch = tuple(x.to(device, non_blocking=True) for x in batch)
+                else:
+                    batch = batch.to(device, non_blocking=True)
+                queue.append(batch)
+            except StopIteration:
+                break
+
+        # Main loop - load and queue an additional batch and yield the oldest batch in queue
+        for batch in loader_iter:
+            # push next batch
+            if isinstance(batch, (tuple, list)):
+                next_batch = tuple(x.to(device, non_blocking=True) for x in batch)
+            else:
+                next_batch = batch.to(device, non_blocking=True)
+            queue.append(next_batch)
+            yield queue.pop(0)
+
+        # Yield leftovers
+        while queue:
+            yield queue.pop(0)
+
+    def __iter__(self):
+        return self._prefetch_to_device(iter(self.loader), self.device, self.prefetch_size)
+
+    def __len__(self):
+        return len(self.loader)
+    
+
+def seed_worker(worker_id: int) -> None:
+    """
+    worker initialisation function to initialize random seeds for PyTorch Dataloader to ensure 
+    reproducible and independent randomness across multiple worker processes.
+
+    Args:
+        worker_id (int): Unique identifier for the DataLoader worker process (passed
+                         automatically by PyTorch when used as worker_init_fn).
+    """
+    # Note: PyTorch seeds are int64, NumPy uint32 - needs conversion
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)

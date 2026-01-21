@@ -109,7 +109,7 @@ def get_stitch_coords(
     """
     Use cv2.PhaseCorrelate to get the shift of maximum correlation between two images
 
-    Input:
+    Args:
         L_top (np.ndarray): top image to be stitched
         L_bot (np.ndarray): bottom image to be stitched
         tube (int): tube - in case of warning report
@@ -258,7 +258,7 @@ def crop_rightmost_nonblack(img_gray: np.ndarray) -> Tuple[np.ndarray, int]:
     """
     Extract an image region from the right side, neglecting black columns on the right border.
 
-    Input:
+    Args:
         img_gray (np.ndarray): grayscale image
 
     Returns:
@@ -266,18 +266,14 @@ def crop_rightmost_nonblack(img_gray: np.ndarray) -> Tuple[np.ndarray, int]:
         rightmost (int): index of the rightmost non-black column
     """
     # Sum pixel intensities column-wise
-    col_sums = np.sum(img_gray, axis=0)  # shape: (W,)
+    col_sums = np.sum(img_gray, axis=0)
 
     # Find indices of non-black columns
     non_black_cols = np.where(col_sums > 0)[0]
-
     if non_black_cols.size == 0:
         raise ValueError("Image is completely black!")
 
     rightmost = non_black_cols[-1]  # last non-black column index
-
-    # Calculate start and end for slicing
-    #start = max(0, rightmost - width + 1)
     end = rightmost + 1
 
     return img_gray[:, :end], rightmost
@@ -286,7 +282,7 @@ def rem_tape(img: np.ndarray, mask_list: List[str], L1_name: str, tube: str) -> 
     """
     Removes tape from an image using skimage.feature.match_template from given tape templates
 
-    Input:
+    Args:
         img (np.ndarray): RGB image
         mask_list (List[str]): List of mask paths to consider the tape removal. 
                                Should consist of a pool of mask for a given tube
@@ -341,9 +337,6 @@ def rem_tape(img: np.ndarray, mask_list: List[str], L1_name: str, tube: str) -> 
     bool_mask = (mask > 0)
     bool_mask = binary_dilation(bool_mask, iterations=100)
     bool_mask_3d = np.repeat(bool_mask[:, :, np.newaxis], 3, axis=2)
-    #bool_mask = np.roll(bool_mask, 50, axis=1)
-    #img[:, :x_mask+50+25, :] = 0
-    #img[:, x_mask+25:x_mask+w+25, :][bool_mask_3d] = 0
 
     # Create dilated mask
     mask = np.zeros(img.shape[:2], dtype=bool)
@@ -361,23 +354,24 @@ def applyCLAHE(img: np.ndarray, clahe: cv2.CLAHE) -> np.ndarray:
         (img[..., 2] == 0)    
     )
     blue_pixels = img.copy()[blue_mask]
-    #mask = np.all(img == 0, axis=-1)
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     lab[...,0] = clahe.apply(lab[...,0])
     img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     img[blue_mask] = blue_pixels
     return img
 
+
 def add_reference_pixels(img) -> np.ndarray:
     """ By default places a single green pixel in the middle 1000px from right border"""
     img[img.shape[0]//2, -1000, :] = (0, 255, 0)
     return img
 
+
 def remove_scannoise(img: np.ndarray) -> np.ndarray:
     """"
     Remove scan noise from an image by removing the column and row mean, neglecting black regions.
     This function might need modification if tape is included in the image.
-    Input:
+    Args:
         img (np.array) : image to be processed
 
     Returns:
@@ -394,10 +388,7 @@ def remove_scannoise(img: np.ndarray) -> np.ndarray:
     blue_pixels = img.copy()[blue_mask]
     black_mask = (img_gray < 10) | (img_gray > 200) | blue_mask
     light_mask = (img_gray > 220)
-    #black_indices = np.where(mask == 0)
-    #exclude_mask = black_indices
     exclude_mask = black_mask # | mask
-    #img[black_indices] = np.nan # exclude black regions
     img_copy = img.copy()
     img_copy[exclude_mask] = np.nan # apply mask for mean calc
     mask_img = np.all(img == 0, axis=-1)
@@ -433,15 +424,10 @@ def contrast_brightness_normalization(img: np.ndarray) -> np.ndarray:
     Adjust the contrast and brightness of an image to match a reference value, excluding black regions.
     
     """
-    # create mask to exclude black regions
-    #mask = np.full((img.shape[0], img.shape[1]), 255, dtype = np.uint8)
-    #mask[img[..., 0] == 0] = 0 # mask out the black regions for contrast and brightness calc.
-
     mask = np.full((img.shape[0], img.shape[1]), 255, dtype=np.uint8)
     blue_mask = (img[..., 0] == 255) & (img[..., 1] == 0) & (img[..., 2] == 0)
     blue_pixels = img.copy()[blue_mask]
     mask[blue_mask] = 0
-
 
     # reference values
     ref_contrast = 21
@@ -459,9 +445,5 @@ def contrast_brightness_normalization(img: np.ndarray) -> np.ndarray:
     img = cv2.addWeighted(img, 1, img, 0, brightness)
 
     img[blue_mask] = blue_pixels
-
-    # new mask?
-    #img[mask == 0] = 0
-
 
     return img

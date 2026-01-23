@@ -99,7 +99,7 @@ def elastic_deform(image: torch.Tensor, padding: int=60) -> torch.Tensor:
     image = np.pad(
         image,
         [(0, 0), (padding, padding), (padding, padding)],
-        mode='constant',
+        mode="constant",
         constant_values=0
     )
     elastic_map = get_elastic_map(image.shape[1:])

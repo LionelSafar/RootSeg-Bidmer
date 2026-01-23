@@ -46,19 +46,19 @@ def format_date(filename: str) -> str:
     if match_DDMMYYYY:
         day, month, year = match_DDMMYYYY.groups()
         if len(year) == 2:
-            year = f'20{year}'
+            year = f"20{year}"
         new_date = f"_{year}.{month}.{day}_"
     elif match_YYYYMMDD:
         year, month, day = match_YYYYMMDD.groups()
         if len(year) == 2:
-            year = f'20{year}'
+            year = f"20{year}"
         new_date = f"_{year}.{month}.{day}_"
     elif match_DDMMYY:
         day, month, year = match_DDMMYY.groups()
-        year = f'20{year}'
+        year = f"20{year}"
         new_date = f"_{year}.{month}.{day}_"
     else:
-        print(f"Date format in'{filename}' not recognized.")
+        print(f"Date format in '{filename}' not recognized.")
         new_date = input("Please enter the date in the format DD.MM.YY: ")
         raise ValueError(f"Date format not recognized.")
     
@@ -72,7 +72,7 @@ def retrieve_info(filename: str, change_level_name: bool=False) -> Dict[str, str
 
     Args:
         filename (str): the filename to retrieve the information from.
-        change_level_name (bool): If 'True' changes L0 naming to L1 (common mistake when images were saved)
+        change_level_name (bool): If "True" changes L0 naming to L1 (common mistake when images were saved)
 
     Returns:
         dict: a dictionary containing the information of the filename.
@@ -104,12 +104,12 @@ def retrieve_info(filename: str, change_level_name: bool=False) -> Dict[str, str
     try:
         orientation = re.search(r"(N|S)_", subname).group(1)
     except AttributeError:
-        orientation = '' 
-        #orientation = 'S'
+        orientation = ""
+        #orientation = "S"
 
-    if level == '0' and change_level_name == True:
+    if level == "0" and change_level_name == True:
         print("Changing L0 -> L1")
-        level = '1'
+        level = "1"
 
     if not tube or not level:
         raise ValueError("Tube or level not found in the filename.")
@@ -119,7 +119,7 @@ def retrieve_info(filename: str, change_level_name: bool=False) -> Dict[str, str
 
 def rename_file(experiment: str, file_dict: Dict[str, str]) -> str:
     """ Rename the file to the specific format. {experiment}_T{i}_L{j}_DD.MM.YY_{AUX}.tiff"""
-    return f"{experiment}{file_dict['O']}_T{file_dict['T']}_L{file_dict['L']}_{file_dict['D']}{file_dict['R']}"
+    return f"{experiment}{file_dict["O"]}_T{file_dict["T"]}_L{file_dict["L"]}_{file_dict["D"]}{file_dict["R"]}"
 
 
 def rename_and_order(args):
@@ -137,14 +137,14 @@ def rename_and_order(args):
 
     # Extract year:
     data = retrieve_info(format_date(files[0]))
-    year = data['D'][2:4]
+    year = data["D"][2:4]
 
     # Get saving path and create it if it does not exist
     if args.savepath:
         current_dir = args.savepath
     else:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-    saving_path = os.path.join(current_dir, 'Data', args.experiment+year, 'Raw_images')
+    saving_path = os.path.join(current_dir, "Data", args.experiment+year, "Raw_images")
     os.makedirs(saving_path, exist_ok=True)
 
     # Rename all files and move them to the saving path - Consider subfolders as well
@@ -162,7 +162,7 @@ def rename_and_order(args):
         T = data["T"]
         O = data["O"]
         if data["L"] == "0":
-            print('Skipping L0 file')
+            print("Skipping L0 file")
             continue
         new_name = rename_file(args.experiment, data)
 
@@ -179,50 +179,50 @@ def rename_and_order(args):
                 shutil.move(source_file, target_file)
         else:
             print(50*"-")
-            print(f'moved {source_file} to {target_file}')
+            print(f"moved {source_file} to {target_file}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Rename files in a folder to a specific format.')
+    parser = argparse.ArgumentParser(description="Rename files in a folder to a specific format.")
     parser.add_argument(
-        '--folder', 
+        "--folder", 
         type=str,
-        help='The folder containing the files to rename.'
+        help="The folder containing the files to rename."
     )
     parser.add_argument(
-        '--savepath', 
+        "--savepath", 
         type=str, 
         default=None,
-        help='If given, will save at specified location'
+        help="If given, will save at specified location"
     )
     parser.add_argument(
-        '--experiment', 
+        "--experiment", 
         type=str,
-        help='The format to rename the files to. - Einzelarten or Bidmer'
+        help="The format to rename the files to. - Einzelarten or Bidmer"
     )
     parser.add_argument(
-        '--orientation', 
-        action='store_true', 
+        "--orientation", 
+        action="store_true", 
         default=False,
-        help='Whether to include N/S orientation to the tube'
+        help="Whether to include N/S orientation to the tube"
     )
     parser.add_argument(
-        '--dry_run', 
-        action='store_true', 
+        "--dry_run", 
+        action="store_true", 
         default=False,
-        help='Whether to run the script without actually moving the files.'
+        help="Whether to run the script without actually moving the files."
     )
     parser.add_argument(
-        '--copy', 
-        action='store_true', 
+        "--copy", 
+        action="store_true", 
         default=False,
-        help='Whether to make a copy in the target folder instead of moving'
+        help="Whether to make a copy in the target folder instead of moving"
     )
     parser.add_argument(
-        '--rename_L0', 
-        action='store_true', 
+        "--rename_L0", 
+        action="store_true", 
         default=False,
-        help='Wrongly saved L0 images are renamed to L1, if not, L0 labelled images will be ignored'
+        help="Wrongly saved L0 images are renamed to L1, if not, L0 labelled images will be ignored"
     )          
     args = parser.parse_args()
     rename_and_order(args)

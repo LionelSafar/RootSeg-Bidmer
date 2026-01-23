@@ -2,16 +2,16 @@
 This module contains helper functions for the preprocessing of raw root images.
 
 """
-
-import numpy as np
-from typing import Tuple, List, Any
-import cv2
 import os
 from datetime import datetime
-from skimage.feature import match_template
-from scipy.ndimage import binary_dilation
 import warnings
 import logging
+from typing import Tuple, List, Any
+
+import numpy as np
+import cv2
+from skimage.feature import match_template
+from scipy.ndimage import binary_dilation
 
 
 def get_level(filename:str) -> str:
@@ -50,7 +50,7 @@ def get_date(filename: str) -> datetime:
 
 def fix_image_size(
         img: np.ndarray, 
-        name: str = '',
+        name: str = "",
         size: Tuple[int, int] = (8784, 10200), 
         crop_left: bool = True,
 ) -> np.ndarray:
@@ -73,7 +73,7 @@ def fix_image_size(
     if (h, w) == (h_target, w_target): 
         return img
     elif (w, h) == (h_target, w_target):
-        logging.warning(f'Image {name} seems to be rotated! Fix manually please')
+        logging.warning(f"Image {name} seems to be rotated! Fix manually please")
     
     # Crop or pad the image to the target size
     x_pad, y_pad = max(0, w_target - w), max(0, h_target - h)
@@ -183,7 +183,7 @@ def iterative_stitching(
                     shift_list[i-1] = (shift_list[i-1][0]+img.shape[1], shift_list[i-1][1], shift_list[i-1][2])
                     length -= shift_list[i-1][0]
     except Exception as e:
-        print('run prev size')
+        print("run prev size")
         print(f"An error occurred: {e}") # This line prints the exception
         if not prev_length:
             logging.critical(f"{tube}: First date of the series does not contain all scan levels -- Aborting!")
@@ -435,13 +435,13 @@ def contrast_brightness_normalization(img: np.ndarray) -> np.ndarray:
 
     # get current brightness and contrast
     _, im_contrast = cv2.meanStdDev(img[..., 0], mask = mask)
-    contrast = float(ref_contrast / im_contrast)
+    contrast = float(ref_contrast / im_contrast.item())
     
     img = cv2.addWeighted(img, contrast, img, 0, 0)
     img_grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     im_brightness, _ = cv2.meanStdDev(img_grey, mask = mask)
 
-    brightness = float(ref_brightness - im_brightness)
+    brightness = float(ref_brightness - im_brightness.item())
     img = cv2.addWeighted(img, 1, img, 0, brightness)
 
     img[blue_mask] = blue_pixels

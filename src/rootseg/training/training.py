@@ -55,7 +55,7 @@ def focal_loss_fn(
         logits: torch.Tensor, 
         targets: torch.Tensor, 
         gamma: int=2.5, 
-        reduction: Literal['mean', 'sum']='mean', 
+        reduction: Literal["mean", "sum"]="mean", 
         mask: torch.Tensor=None
 ) -> torch.Tensor:
     """
@@ -65,23 +65,23 @@ def focal_loss_fn(
         logits (torch.Tensor): (N, C, H, W)
         targets (torch.Tensor): (N, H, W)  - integer class labels
         gamma (int): gamma factor of the loss
-        reduction (Literal['mean', 'sum']): mean or sum of focal loss over the image
+        reduction (Literal["mean", "sum"]): mean or sum of focal loss over the image
         mask (torch.Tensor): (H, W) If provided, masks the focal loss
     
     Returns:
         torch.Tensor: Either sum or mean focal loss error value
     """
     #do not consider alpha here.
-    ce_loss = F.cross_entropy(logits, targets, reduction='none')  # (N, H, W)
+    ce_loss = F.cross_entropy(logits, targets, reduction="none")  # (N, H, W)
     pt = torch.exp(-ce_loss)  # = prob of the true class
     focal_loss = (1 - pt) ** gamma * ce_loss
 
     if mask is not None:
         focal_loss = focal_loss * mask
 
-    if reduction == 'mean':
+    if reduction == "mean":
         return focal_loss.mean()
-    elif reduction == 'sum':
+    elif reduction == "sum":
         return focal_loss.sum()
     else:
         return focal_loss
@@ -163,7 +163,6 @@ def masked_loss(
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: (loss, confusion_stats)
     """
-
     # Forward pass and softmax over channel dim
     logits = model(images) 
     probs = F.softmax(logits, dim=1)
@@ -175,7 +174,7 @@ def masked_loss(
     labels_red = labels - 1.0 
     labels_red = torch.clamp(labels_red, min=0)
     labels_red = labels_red.squeeze(1).long()
-    fc_loss = focal_loss_fn(logits, labels_red, gamma=gamma, reduction='mean', mask=root_mask)
+    fc_loss = focal_loss_fn(logits, labels_red, gamma=gamma, reduction="mean", mask=root_mask)
     labels_onehot = F.one_hot(
         labels_red, 
         num_classes=logits.shape[1]
@@ -216,7 +215,6 @@ def combined_loss(
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: (loss, confusion_stats)
     """
-
     # Forward pass
     logits = model(images)
     probs = F.sigmoid(logits)
@@ -224,7 +222,7 @@ def combined_loss(
     # Weighted binary cross entropy loss, with lower weighting at boundaries
     boundary_mask = morphological_gradient(labels)
     weighted_mask = torch.where(boundary_mask > 0, 0.85, 1.0)
-    bce_loss = F.binary_cross_entropy_with_logits(logits, labels, reduction='none')
+    bce_loss = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
     bce_loss = (bce_loss * weighted_mask).mean()
 
     # total loss
@@ -260,7 +258,6 @@ def val_step(model, images, labels, alpha=0.3, gamma=2.5, multiclass: bool=False
     """
     Forward pass without gradients for single- or multiclass training.
     """
-
     with torch.no_grad():
         if multiclass:
             #loss, stats = multiclass_loss(model, images, labels, alpha, gamma=gamma)
@@ -282,7 +279,7 @@ def training_loop(
         gamma: float=2.0, 
         save_path: str=None, 
         logger: DataLogger=None, 
-        device: torch.device='cpu', 
+        device: torch.device="cpu", 
         trial: optuna.Trial = None, 
         N_classes: int=1
 ):
@@ -300,14 +297,13 @@ def training_loop(
         gamma (float): gamma factor for focal loss in case of multiclass segmentation
         save_path (str): saving directory
         logger (DataLogger): Datalogger class instance 
-        device (torch.device): torch device 'gpu' or 'cpu'
+        device (torch.device): torch device "gpu" or "cpu"
         trial (optuna.Trial): In case of hyperparameter optimisation, for trial report and pruning.
         N_classes (int): Amount of classes that are predicted (excluding background)
     """
-
     best_f1 = 0.0 # store best f1 to track the best performing model
 
-    for epoch in tqdm(range(1, epochs + 1), desc='Training Progress'):
+    for epoch in tqdm(range(1, epochs + 1), desc="Training Progress"):
 
         # Initialise train and val loss / stat tracking
         train_loss_deque = []
@@ -346,15 +342,15 @@ def training_loop(
 
         # Log epoch stats
         if logger:
-            logger.log((train_stats_total, train_loss), 'Train')
-            logger.log((val_stats_total, val_loss), 'Val')
+            logger.log((train_stats_total, train_loss), "Train")
+            logger.log((val_stats_total, val_loss), "Val")
             logger.print_last_metrics()
         
         # Save if best model
         if val_f1 > best_f1:
             best_f1 = val_f1
             if save_path:
-                torch.save(model.state_dict(), save_path+f'model_best.pth')
+                torch.save(model.state_dict(), save_path + f"/model_best.pth")
                 print(f"New best model saved at epoch {epoch} with F1 {best_f1:.3}")
 
         # Reporting to optuna in case of hyperparameter optimisation run
@@ -362,7 +358,6 @@ def training_loop(
             trial.report(val_f1, step=epoch)
             if trial.should_prune():
                 raise optuna.exceptions.TrialPruned()
-    print("Training complete.")
     return model, logger
 
 
@@ -395,7 +390,7 @@ class CosineAnnealingWarmRestartsDecay(CosineAnnealingWarmRestarts):
         
         # Store initial base LRs before they are modified
         self.lr_decay_factor = lr_decay_factor
-        self.initial_base_lrs = [group['lr'] for group in optimizer.param_groups]
+        self.initial_base_lrs = [group["lr"] for group in optimizer.param_groups]
         super().__init__(optimizer, T_0, T_mult, eta_min, last_epoch)
 
     def step(self, epoch=None):
@@ -406,7 +401,7 @@ class CosineAnnealingWarmRestartsDecay(CosineAnnealingWarmRestarts):
 
             # update the optimizer's param_group to reflect this new base
             for i, param_group in enumerate(self.optimizer.param_groups):
-                param_group['lr'] = self.base_lrs[i]
+                param_group["lr"] = self.base_lrs[i]
 
         # perform regular cosine annealing step from parent's class
         super().step(epoch)

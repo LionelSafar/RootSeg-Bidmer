@@ -89,8 +89,8 @@ class TrainDataset_torch(Dataset):
         else:
             y = read_images(y_paths, annots=True, as_tensor=True)
         if self.pad > 0: # Pad image borders based on input-output difference of the models
-            X = F.pad(X, (0, 0, self.pad, self.pad, self.pad, self.pad), mode='reflect')
-            y = F.pad(y, (0, 0, self.pad, self.pad, self.pad, self.pad), mode='reflect')
+            X = F.pad(X, (0, 0, self.pad, self.pad, self.pad, self.pad), mode="reflect")
+            y = F.pad(y, (0, 0, self.pad, self.pad, self.pad, self.pad), mode="reflect")
         if self.multiclass: # muliclass case -> values are {0, 1, 2, ..}
             y = y.to(torch.float16)
         else: # binary case
@@ -211,8 +211,8 @@ class ValDataset_torch(Dataset):
         h_pad = h_count * self.outsize - imgs.shape[2]
         v_pad = v_count * self.outsize - imgs.shape[1]
 
-        imgs = F.pad(imgs, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode='reflect')
-        annots = F.pad(annots, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode='reflect')
+        imgs = F.pad(imgs, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode="reflect")
+        annots = F.pad(annots, (0, 0, self.pad, self.pad+h_pad, self.pad, self.pad+v_pad), mode="reflect")
 
         # From (N, H, W, C) -> (N, (H-imgsize)/outsize +1, (W-imgsize)/outsize +1, C, imgsize, imgsize) 
         # -> (N, N_H, N_W, C, h, w)
@@ -269,6 +269,7 @@ class PrefetchWrapper:
         self.device = device
 
     def _prefetch_to_device(
+            self,
             loader: torch.utils.data.DataLoader, 
             device: torch.device, 
             prefetch_size: int=2

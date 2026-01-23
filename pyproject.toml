@@ -8,6 +8,25 @@ version = "0.1.0"
 description = "Root image preprocessing and segmentation tools"
 requires-python = ">=3.9"
 
+dependencies = [
+    "numpy",
+    "torch",
+    "torchvision",
+    "opencv-python",
+    "imageio",
+    "Pillow",
+    "scikit-learn",
+    "scikit-image",
+    "scipy",
+    "tqdm",
+    "optuna",
+    "pandas",
+    "matplotlib",
+    "rich",
+    "argparse",
+    "h5py",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

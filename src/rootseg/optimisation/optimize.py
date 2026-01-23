@@ -1,13 +1,17 @@
 """
-Model Optimisation. Current version only supports optimisation of the multiclass models, 
+Model Optimisation script. Current version only supports optimisation of the multiclass models, 
 need hyperparameter adjustments + range of variables for single-class model.
+
+Currently Optimizes for
+    - learning rate
+    - weight decay
+    - alpha for focal loss weighting
+    - gamma for focal loss
 """
 
 import os
 import glob
 import argparse
-
-from Root_Detection.plotting_tools import *
 
 import optuna
 import torch
@@ -21,32 +25,32 @@ from rootseg.training.datasets import TrainDataset_torch, ValDataset_torch, Pref
 
 def main(args):
     g = torch.Generator()
-    torch.multiprocessing.set_start_method('spawn', force=True)
+    torch.multiprocessing.set_start_method("spawn", force=True)
     g.manual_seed(42) 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Mode selection
-    if args.class_selection == 'roots':
+    if args.class_selection == "roots":
         class_names = None
         output_size = 1
-    elif args.class_selection == 'carex':
-        class_names = ['Carex', 'Non-Carex']
+    elif args.class_selection == "carex":
+        class_names = ["Carex", "Non-Carex"]
         output_size = 2
-    elif  args.class_selection == 'multispecies':
-        class_names = ['Anthox', 'Geum', 'Carex', 'Leontodon', 'Potentilla', 'Helictotrichon']
+    elif  args.class_selection == "multispecies":
+        class_names = ["Anthox", "Geum", "Carex", "Leontodon", "Potentilla", "Helictotrichon"]
         output_size = 6
-    elif args.class_selection == 'classes':
-        class_names = ['Carex', 'Graminoids', 'Herbs']
+    elif args.class_selection == "classes":
+        class_names = ["Carex", "Graminoids", "Herbs"]
         output_size = 3
 
-    if args.basedir.endswith('/'):
+    if args.basedir.endswith("/"):
         args.basedir = args.basedir[:-1]
         
     # Load datasets
-    X_train_dir = os.path.join(args.basedir, 'train', 'images')
-    y_train_dir = os.path.join(args.basedir, 'train', 'annotations')
-    X_val_dir = os.path.join(args.basedir, 'val', 'images')
-    y_val_dir = os.path.join(args.basedir, 'val', 'annotations')
+    X_train_dir = os.path.join(args.basedir, "train", "images")
+    y_train_dir = os.path.join(args.basedir, "train", "annotations")
+    X_val_dir = os.path.join(args.basedir, "val", "images")
+    y_val_dir = os.path.join(args.basedir, "val", "annotations")
 
     X_train = sorted(glob.glob(os.path.join(X_train_dir, "*")))
     y_train = sorted(glob.glob(os.path.join(y_train_dir, "*")))
@@ -62,16 +66,16 @@ def main(args):
         logger = DataLogger(class_names=class_names)
 
         # Select hyperparameters
-        batchsize = trial.suggest_categorical("batchsize", [8, 16])
+        batchsize = trial.suggest_categorical("batchsize", [2, 4])
         lr = trial.suggest_float("learning rate", 1e-4, 1e-3, log=True)
         wd = trial.suggest_float("weight decay", 1e-7, 1e-4, log=True)
         alpha = trial.suggest_float("alpha", 0.0, 1.0)
         gamma = trial.suggest_float("gamma", 0.0, 4.0)
 
         # Initialise model with new weight initialisation
-        if args.model == 'swin_b':
+        if args.model == "swin_b":
             model = SwinB_UNet(output_size)
-        elif args.model == 'swin_t':
+        elif args.model == "swin_t":
             model = SwinT_UNet(output_size)
         else:
             raise ValueError(f"Invalid model name '{args.model}'. Expected 'swin_b' or 'swin_t'.")
@@ -128,22 +132,26 @@ def main(args):
             trial=trial
         )
 
-        savepath = f'optimisation_adam/trial_{trial.number}'
-        logger.plot_metrics(model_name=savepath)
+        savepath = f"trained_models/optimisation/trial_{trial.number}"
+        os.makedirs(savepath, exist_ok=True)
+        logger.plot_metrics(path=savepath)
 
-        return logger.get_last_F1('Val')
+        return logger.get_last_F1("Val")
 
     # Create or load study
+    path = "trained_models/optimisation/"
+    os.makedirs(path, exist_ok=True)
+    storage_path = path + f"{args.name}"
     study = optuna.create_study(
-        direction='maximize',
-        study_name=f'{args.name}',
-        storage=f'sqlite:///{args.name}.db',
+        direction="maximize",
+        study_name=f"{args.name}",
+        storage=f"sqlite:///{storage_path}.db",
         pruner = optuna.pruners.MedianPruner(n_warmup_steps=5, n_startup_trials=5),
         load_if_exists=True
     )
     # Perform trials
     study.optimize(objective, n_trials=args.n_trials-len(study.trials), show_progress_bar=True)
-
+    print("finished")
     # Evaluation
     all_trials = study.get_trials(
         states=(optuna.trial.TrialState.COMPLETE,)
@@ -161,75 +169,73 @@ def main(args):
         print(f"  Value: {trial.value:.4f}")
         print(f"  Params: {trial.params}")
         print("-" * 15)
-    print('Number of finished trials:', len(study.trials))
-    print('Best trial:')
+    print("Number of finished trials:", len(study.trials))
+    print("Best trial:")
     trial = study.best_trial
-    print(f'Best Validation F1: {trial.value:4.2}')
-    print(f'Best Params:')
+    print(f"Best Validation F1: {trial.value:4.2}")
+    print(f"Best Params:")
     for key, value in trial.params.items():
-        print(f'-> {key}: {value}')
-    print('Best trial number:', trial.number)
+        print(f"-> {key}: {value}")
+    print("Best trial number:", trial.number)
 
-
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(current_dir, 'figures', 'optimisation_adamw')
+    path = f"trained_models/optimisation"
 
     # Save parameter importance
     fig = optuna.visualization.plot_param_importances(study)
-    fig.write_image(path + f'/param_importance_{args.name}.pdf', scale=3)
+    fig.write_image(path + f"/param_importance_{args.name}.pdf", scale=3)
 
     # Save parallel coordinate
     fig = optuna.visualization.plot_parallel_coordinate(study)
     fig.update_layout(
-        title_text='',
+        title_text="",
         font=dict(size=16)
     )
-    fig.write_image(path + f'/parallel_coordinate_{args.name}.pdf', scale=3)
+    fig.write_image(path + f"/parallel_coordinate_{args.name}.pdf", scale=3)
 
     # Visualise slice
     fig = optuna.visualization.plot_slice(study)
-    fig.write_image(path + f'/slice_{args.name}.pdf', scale=3)
+    fig.write_image(path + f"/slice_{args.name}.pdf", scale=3)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--model', 
+        "--model", 
         type=str, 
-        default='swin_b', 
+        default="swin_b", 
         choices=["swin_b", "swin_t"],
-        help='Model to optimise: swin_b or swin_t backboned U-Net'
+        help="Model to optimise: swin_b or swin_t backboned U-Net"
     )
     parser.add_argument(
         "--class_selection",
         choices=["roots", "carex", "multispecies", "classes"],
         default="roots",
         help="""Choose operational mode for segmentation.
-        Default is 'roots' to detect roots.
-        Options are 'roots', 'carex', and 'multispecies'."""
+        Default is "roots" to detect roots.
+        Options are "roots", "carex", and "multispecies"."""
     )
     parser.add_argument(
-        '--basedir', 
+        "--basedir", 
         type=str, 
-        default='data', 
-        help='Path to the train and val data folders'
+        default="data", 
+        help="Path to the train and val data folders"
     )
     parser.add_argument(
-        '--epochs', 
+        "--epochs", 
         type=int, 
         default=30, 
-        help='Number of max epochs per trial'
+        help="Number of max epochs per trial"
     )
     parser.add_argument(
-        '--n_trials', 
+        "--n_trials", 
         type=int, 
         default=50, 
-        help='Number of total trials'
+        help="Number of total trials"
     )
     parser.add_argument(
-        '--name', 
+        "--name", 
         type=str, 
-        default='swin_DB', 
-        help='Name of optuna study'
+        default="swin_DB", 
+        help="Name of optuna study"
     )
     args = parser.parse_args()
 

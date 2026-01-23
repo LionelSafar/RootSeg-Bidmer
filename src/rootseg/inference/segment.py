@@ -6,18 +6,18 @@ import os
 import math
 import queue
 import threading
+import itertools
 import gc
+from typing import Dict, Tuple, Any, List, Iterator
 
 import argparse
 import numpy as np
 from PIL import Image
-from typing import Dict, Tuple, Any, List, Iterator
-import itertools
 import torch
 from torch.utils.data import DataLoader, IterableDataset
 from skimage import measure
 from torchvision.transforms import ToTensor
-
+import rich
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -45,10 +45,10 @@ def get_image_paths(base_path: str) -> List[Dict[str, str]]:
     paths = []
     for dirpath, _, filenames in os.walk(base_path):
         for filename in filenames:
-            if filename.lower().endswith(('.tif', '.tiff', '.png')):
+            if filename.lower().endswith((".tif", ".tiff", ".png")):
                 full_path = os.path.join(dirpath, filename)
                 relative_path = os.path.relpath(full_path, base_path)
-                paths.append({'full': full_path, 'relative': relative_path})
+                paths.append({"full": full_path, "relative": relative_path})
     return paths
 
 
@@ -94,7 +94,7 @@ class TiledImageDataset(IterableDataset):
 
     def _image_exist(self, path_info: Dict[str, str]) -> bool:
         """Check if a segmented image already exists to an input image"""
-        savename = path_info['relative'].replace('.tiff', '_segmented.png')
+        savename = path_info["relative"].replace(".tiff", "_segmented.png")
         if os.path.exists(os.path.join(self.savepath, savename)):
             return True
         else:
@@ -143,12 +143,12 @@ class TiledImageDataset(IterableDataset):
                 for x in range(0, w_tiles * self.stepsize, self.stepsize):
                     tile = img_padded[y:y+self.tilesize, x:x+self.tilesize, :]
                     yield {
-                        'tile': self._preprocess_tile(tile),
-                        'coords': torch.tensor([x, y]),
-                        'image_info': {
-                            'relative_path': path_info['relative'],
-                            'original_shape': torch.tensor([orig_h, orig_w]),
-                            'total_tiles': total_tiles,
+                        "tile": self._preprocess_tile(tile),
+                        "coords": torch.tensor([x, y]),
+                        "image_info": {
+                            "relative_path": path_info["relative"],
+                            "original_shape": torch.tensor([orig_h, orig_w]),
+                            "total_tiles": total_tiles,
                         }
                     }
 
@@ -187,13 +187,13 @@ class TiledImageDataset(IterableDataset):
                 for x in range(0, w_tiles * self.outsize, self.outsize):
                     tile = img_padded[y:y+self.tilesize, x:x+self.tilesize, :]
                     yield {
-                        'tile': self._preprocess_tile(tile),
-                        'coords': torch.tensor([x, y]),
-                        'image_info': {
-                            'relative_path': path_info['relative'],
-                            'original_shape': torch.tensor([orig_h, orig_w]),
-                            'total_tiles': total_tiles,
-                            'segmentation_path': segpath,
+                        "tile": self._preprocess_tile(tile),
+                        "coords": torch.tensor([x, y]),
+                        "image_info": {
+                            "relative_path": path_info["relative"],
+                            "original_shape": torch.tensor([orig_h, orig_w]),
+                            "total_tiles": total_tiles,
+                            "segmentation_path": segpath,
                         }
                     }
 
@@ -246,9 +246,6 @@ class Reconstructor(threading.Thread):
         self.queue = result_queue
         self.save_dir = save_dir
         self.class_names = class_names
-        if self.class_names:
-            self.visdir = os.path.join(save_dir, "..", "visualization")
-            os.makedirs(self.visdir, exist_ok=True)
         self.imgsize = imgsize
         self.pad = pad
         self.stepsize = stepsize
@@ -276,10 +273,10 @@ class Reconstructor(threading.Thread):
 
             # Unpack item on CPU
             pred_tile, coords, info = item
-            pred_tile_cpu = pred_tile.to('cpu')
-            rel_path = info['relative_path']
-            orig_shape = info['original_shape']
-            total_tiles = info['total_tiles']
+            pred_tile_cpu = pred_tile.to("cpu")
+            rel_path = info["relative_path"]
+            orig_shape = info["original_shape"]
+            total_tiles = info["total_tiles"]
 
             # If this is the first tile for this image, create a new canvas
             if rel_path not in self.canvases:
@@ -288,38 +285,38 @@ class Reconstructor(threading.Thread):
                 if self.overlap: # If overlap - count-canvas will track which pixels occur twice to average later
                     self.count_canvases[rel_path] = torch.zeros((1, canvas_h, canvas_w), dtype=torch.float32)
                     self.canvases[rel_path] = {
-                        'canvas': torch.zeros((pred_tile.shape[0], canvas_h, canvas_w), dtype=torch.float32), 
-                        'count': 0 # count towards finishing the canvas
+                        "canvas": torch.zeros((pred_tile.shape[0], canvas_h, canvas_w), dtype=torch.float32), 
+                        "count": 0 # count towards finishing the canvas
                     }
                     with Image.open(info["segmentation_path"]) as seg:
                         seg = self.to_tensor(seg)
                         self.segmentations[rel_path] = seg
                 else:
                     self.canvases[rel_path] = {
-                        'canvas': torch.zeros((1, canvas_h, canvas_w), dtype=torch.float32),
-                        'count': 0 # count == total_tiles indicates full reconstruction
+                        "canvas": torch.zeros((1, canvas_h, canvas_w), dtype=torch.float32),
+                        "count": 0 # count == total_tiles indicates full reconstruction
                     }
             # Get size and position of the tile and insert to canvas
             out_size = pred_tile_cpu.shape[-1]
             x, y = coords[0], coords[1]
             try:
-                self.canvases[rel_path]['canvas'][:, y:y+out_size, x:x+out_size] = pred_tile_cpu
+                self.canvases[rel_path]["canvas"][:, y:y+out_size, x:x+out_size] = pred_tile_cpu
                 if self.overlap:
                     self.count_canvases[rel_path][:, y:y+out_size, x:x+out_size] += 1
             except Exception as e:
                 raise e
-            self.canvases[rel_path]['count'] += 1 # increase counter of inserted tiles
+            self.canvases[rel_path]["count"] += 1 # increase counter of inserted tiles
 
-            if self.canvases[rel_path]['count'] == total_tiles: # finished canvas
+            if self.canvases[rel_path]["count"] == total_tiles: # finished canvas
                 if self.overlap:
-                    prob_map = self.canvases[rel_path]['canvas'] / self.count_canvases[rel_path] # average prob
+                    prob_map = self.canvases[rel_path]["canvas"] / self.count_canvases[rel_path] # average prob
                     segmap = (self.segmentations[rel_path] > 0).to(torch.int8)
                     predicted = torch.argmax(prob_map, dim=0).to(torch.int8).unsqueeze(0)
                     predicted += 1 # reserve 0-class for background
                     predicted = predicted[:, :orig_shape[0], :orig_shape[1]]
                     final_mask = predicted * segmap # set non-roots to 0 - background
                 else:
-                    predicted = (self.canvases[rel_path]['canvas'] > 0.5)
+                    predicted = (self.canvases[rel_path]["canvas"] > 0.5)
                     final_mask = predicted.to(torch.uint8) * 255
                     final_mask = final_mask[:, :orig_shape[0], :orig_shape[1]]
 
@@ -332,30 +329,34 @@ class Reconstructor(threading.Thread):
 
                 # Construct save path
                 save_name = os.path.splitext(os.path.basename(rel_path))[0] + "_segmented.png"
-                save_name = rel_path.replace('.tiff', '_segmented.png')
-                if self.class_names:
-                    predmap_path = os.path.join(self.save_dir, 'predmap')
-                    vispath = os.path.join(self.save_dir, 'visual')
-                    rgbpath = os.path.join(self.save_dir, 'rgb')
-                    save_path = os.path.join(self.save_dir, 'output')
+                save_name = rel_path.replace(".tiff", "_segmented.png")
 
-                    vis_save = os.path.join(vispath, save_name)
-                    rgb_save = os.path.join(rgbpath, save_name)
-                    pred_save = os.path.join(predmap_path, save_name)
+                rel_dir = os.path.dirname(rel_path)      # e.g. "T2N"
+                base = os.path.splitext(os.path.basename(rel_path))[0]
+                save_name = base + "_segmented.png"
+                if self.class_names:
+                    predmap_path = os.path.join(self.save_dir, "predmap", rel_dir)
+                    vispath = os.path.join(self.save_dir, "visual", rel_dir)
+                    rgbpath = os.path.join(self.save_dir, "rgb", rel_dir)
+                    save_path = os.path.join(self.save_dir, "output", rel_dir)
 
                     os.makedirs(save_path, exist_ok=True)
                     os.makedirs(vispath, exist_ok=True)
                     os.makedirs(rgbpath, exist_ok=True)
                     os.makedirs(predmap_path, exist_ok=True)
 
+                    vis_save = os.path.join(vispath, save_name)
+                    rgb_save = os.path.join(rgbpath, save_name)
+                    pred_save = os.path.join(predmap_path, save_name)
+
                     visualize_multiclass(predicted.squeeze(0), self.class_names, savepath = pred_save)
                     visualize_multiclass(final_mask.squeeze(0), self.class_names, savepath = vis_save)
                     vis_seg_rgb(final_mask.squeeze(0), rgb_save)
                 else:
-                    save_path = os.path.join(self.save_dir)
+                    save_path = os.path.join(self.save_dir, rel_dir)
                     os.makedirs(save_path, exist_ok=True)
 
-                # Save image with PIL
+                # Save image with 
                 final_mask_PIL = Image.fromarray(final_mask.squeeze(0))
                 final_mask_PIL.save(os.path.join(save_path, save_name))
                 if self.progress and self.task_id is not None:
@@ -378,8 +379,8 @@ def run_segmentation(
         save_path: str,
         segmentation_path: str=None, 
         sizes: Tuple[int, int, int]=(572, 388, 388),
-        class_selection: str='roots',
-        model_name: str = 'unet',
+        class_selection: str="roots",
+        model_name: str = "unet",
         batch_size: int=4, 
         num_workers: int=2, 
         filter_components: bool=False,
@@ -396,8 +397,8 @@ def run_segmentation(
             - tilesize: tilesize of the input to the model
             - outputsize: outsize of the output of the model
             - stepsize: strides to be used for the tiling in the large images
-        class_selection (str): mode selection of segmentation - options: 'roots', 'carex', 'multispecies', 'classes'
-        model_name (str): modeltype for segmentation - options: 'unet', 'swin_t', 'swin_b'
+        class_selection (str): mode selection of segmentation - options: "roots", "carex", "multispecies", "classes"
+        model_name (str): modeltype for segmentation - options: "unet", "swin_t", "swin_b"
         batch_size (int): batchsize for the neural network processing
         num_workers (int): Number of worker processes spawned for CPU processing
         filter_components (bool): If True, use connected components to filter very small clusters of a specific 
@@ -410,25 +411,25 @@ def run_segmentation(
     Image.MAX_IMAGE_PIXELS = 200000000 
 
     # Select output
-    if class_selection == 'roots':
+    if class_selection == "roots":
         class_names = None
         output_size = 1
-    elif class_selection == 'carex':
-        class_names = ['Carex', 'Non-Carex']
+    elif class_selection == "carex":
+        class_names = ["Carex", "Non-Carex"]
         output_size = 2
-    elif class_selection == 'multispecies':
-        class_names = ['Anthox', 'Geum', 'Carex', 'Leontodon', 'Potentilla', 'Helictotrichon']
+    elif class_selection == "multispecies":
+        class_names = ["Anthox", "Geum", "Carex", "Leontodon", "Potentilla", "Helictotrichon"]
         output_size = 6
-    elif class_selection == 'classes':
-        class_names = ['Carex', 'Graminoids', 'Herbs']
+    elif class_selection == "classes":
+        class_names = ["Carex", "Graminoids", "Herbs"]
         output_size = 3
 
     # Load model
-    if model_name.lower() == 'unet':
+    if model_name.lower() == "unet":
         model = UNet(64, output_size, 4) 
-    elif model_name.lower() == 'swin_t':
+    elif model_name.lower() == "swin_t":
         model = SwinT_UNet(output_size, pretrained=False)
-    elif model_name.lower() == 'swin_b':
+    elif model_name.lower() == "swin_b":
         model = SwinB_UNet(output_size, pretrained=False)
     try:
         model.load_state_dict(torch.load(model_path))
@@ -475,7 +476,7 @@ def run_segmentation(
         # Get count of already processed images for progress bar
         processed_count = sum(
             1 for path_info in image_paths
-            if os.path.exists(os.path.join(save_path, path_info['relative'].replace('.tiff', '_segmented.png')))
+            if os.path.exists(os.path.join(save_path, path_info["relative"].replace(".tiff", "_segmented.png")))
         )
         task_id = progress.add_task(
             "Segmenting images...", 
@@ -499,7 +500,7 @@ def run_segmentation(
 
         with torch.no_grad():
             for batch in data_loader:
-                tiles = batch['tile'].to(device, non_blocking=True) 
+                tiles = batch["tile"].to(device, non_blocking=True) 
                 logits = model(tiles)
 
                 if logits.shape[1] > 1: # multiclass
@@ -507,8 +508,8 @@ def run_segmentation(
                 else: # binary
                     predicted_tiles = torch.sigmoid(logits)
                 for i in range(tiles.shape[0]):
-                    info = {k: v[i] for k, v in batch['image_info'].items()}
-                    result_item = (predicted_tiles[i], batch['coords'][i], info)
+                    info = {k: v[i] for k, v in batch["image_info"].items()}
+                    result_item = (predicted_tiles[i], batch["coords"][i], info)
                     result_queue.put(result_item)
                     
         result_queue.put(None) 
@@ -563,7 +564,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", 
         type=str, 
-        help='model type'
+        help="model type"
     )
     parser.add_argument(
         "--segmenter_model", 
@@ -575,16 +576,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--class_selection", 
         type=str, 
-        choices=['roots', 'multispecies', 'classes'], 
+        choices=["roots", "multispecies", "classes"], 
         required=True, 
-        default='roots', 
+        default="roots", 
         help="Segmentation type, depending on how many classes are predicted - limited to binary ('roots'), " \
              "species-specific ('multispecies') and functional groups ('classes')"
     )
     parser.add_argument(
         "--save_path", 
         type=str, 
-        required=True, 
+        default=None,
         help="Directory to save segmented masks."
     )
     parser.add_argument(
@@ -600,13 +601,18 @@ if __name__ == "__main__":
         help="Number of CPU workers for data loading."
     )
     args = parser.parse_args()
+
+    if args.save_path is None: # Save as segmentation next to processed data
+        args.save_path = os.path.abspath(os.path.join(args.data_path, ".."))
+
     
     # binary segmentation
-    if args.class_selection == 'roots':
+    if args.class_selection == "roots":
+        savepath = os.path.join(args.save_path, "segmentation")
         run_segmentation(
             data_path=args.data_path, 
             model_path=args.model_path, 
-            save_path=args.save_path, 
+            save_path=savepath, 
             sizes=(572, 388, 388),
             model_name=args.model,
             class_selection=args.class_selection,
@@ -616,16 +622,17 @@ if __name__ == "__main__":
     # Multiclass segmentation 
     else:
         # Create binary rootmaps
-        segpath = os.path.join(args.save_path, 'segmentation')
+        segpath = os.path.join(args.save_path, "segmentation", "binary_roots")
+        savepath = os.path.join(args.save_path, "segmentation")
         run_segmentation(
             data_path=args.data_path, 
             model_path=args.segmenter_model, 
             save_path=segpath, 
             sizes=(572, 388, 388),
-            model_name='unet',
+            model_name="unet",
             batch_size=args.batch_size, 
             num_workers=args.num_workers,
-            class_selection='roots'
+            class_selection="roots"
         )
 
         # Ensure memory is cleaned for the second run
@@ -637,7 +644,7 @@ if __name__ == "__main__":
         run_segmentation(
             data_path=args.data_path, 
             model_path=args.model_path, 
-            save_path=args.save_path,
+            save_path=savepath,
             sizes=(768, 644, 500),
             model_name=args.model,
             class_selection=args.class_selection,

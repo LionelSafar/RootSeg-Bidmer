@@ -33,13 +33,13 @@ class Process_Tube:
     """
     Tube processor class
     
-    Takes a tube and processes images chronologically and saves them in a new 'processed' folder:
+    Takes a tube and processes images chronologically and saves them in a new "processed" folder:
     The following steps are done to each image in the timeseries:
         1) If mask-folder is given, removes the tape on the topmost image (if multiple levels)
         2) fix image size of each image to (8784, 10200) (width will be higher if stitching)
-        3) If 'args.stitch_data' -- stitch all images in order to their level L{i} -> L{i+1} -> ..
+        3) If "args.stitch_data" -- stitch all images in order to their level L{i} -> L{i+1} -> ..
             based on Phase Correlation.
-        4) If 'args.reference_path' will align the image to the last-dated image in the reference path
+        4) If "args.reference_path" will align the image to the last-dated image in the reference path
             else will skip and the consecutive images will be aligned to the first image in the series
             -- image alignment is based on Phase Correlation
         5) Enhance image
@@ -76,7 +76,7 @@ class Process_Tube:
             self.ref_img_gray = None
         
         # Get tape masks of the tube if they exist
-        mask_path = os.path.abspath(os.path.join(args.raw_folder, '..', 'masks'))
+        mask_path = os.path.abspath(os.path.join(args.raw_folder, "..", "masks"))
         if os.path.exists(mask_path):
             masks = os.listdir(mask_path)
             mask_list = [os.path.join(mask_path, mask) for mask in masks]
@@ -97,9 +97,9 @@ class Process_Tube:
         self.images.sort(key=lambda x: x["date"]) # sort by date
 
         # Output paths
-        self.outpath = os.path.abspath(os.path.join(args.raw_folder, '..', 'preprocessed', tube))
+        self.outpath = os.path.abspath(os.path.join(args.raw_folder, "..", "preprocessed", tube))
         os.makedirs(self.outpath, exist_ok=True)
-        self.preview_path = os.path.abspath(os.path.join(args.raw_folder, '..', 'preview', tube))
+        self.preview_path = os.path.abspath(os.path.join(args.raw_folder, "..", "preview", tube))
         os.makedirs(self.preview_path, exist_ok=True)
 
         self.progress_queue.put((tube, "total images", len(self.dates)))
@@ -128,7 +128,7 @@ class Process_Tube:
                         imgs.append(L_top)
                     if len(Lbot) != 1:
                         logging.error(f"{self.tube}: Multiple or no L{i+1} images found at {date}:\n" +
-                            "\n".join(img["filename"] for img in Ltop)
+                            "\n".join(img['filename'] for img in Ltop)
                         )
                     try:
                         L_bot_path = os.path.join(self.tube_folder, Lbot[0]["filename"])
@@ -146,9 +146,9 @@ class Process_Tube:
                     new_name = re.sub(r"L\d+", "L0", Ltop[0]["filename"])
                     outpath = os.path.join(self.outpath, new_name)
                     if type(shift[0]) == str:
-                        line = f"{Ltop[0]['filename']}\t{shift[0]}\t{shift[1]}\t{shift[2]:.2f}\n"
+                        line = f"{Ltop[0]["filename"]}\t{shift[0]}\t{shift[1]}\t{shift[2]:.2f}\n"
                     else:
-                        line = f"{Ltop[0]['filename']}\t{shift[0]:+d}\t{shift[1]:+d}\t{shift[2]:.2f}\n"
+                        line = f"{Ltop[0]["filename"]}\t{shift[0]:+d}\t{shift[1]:+d}\t{shift[2]:.2f}\n"
                     self.stitch_summary.append(line)
                     if shift[2] < 0.1:
                         logging.warning(f"{self.tube}: Low correlation ({shift[2]}) while stitching {new_name}! -- See stitching log for details")
@@ -164,7 +164,7 @@ class Process_Tube:
                 imgs = [img for img in self.images if img["date"] == date]
                 if len(imgs) != 1:
                     logging.error(f"{self.tube}: No or multiple images found at {date}:\n" +
-                        "\n".join(img['filename'] for img in imgs) +
+                        "\n".join(img["filename"] for img in imgs) +
                         "-- image is being skipped withour raising ERROR!")
                     continue
                 path = os.path.join(self.tube_folder, imgs[0]["filename"])
@@ -256,7 +256,7 @@ class Process_Tube:
             img = add_reference_pixels(img)
             if self.preview_path:
                 img_prev = img[::10, ::10]
-                filename_prev = new_name.replace('.tiff', '_preview.png')
+                filename_prev = new_name.replace(".tiff", "_preview.png")
                 cv2.imwrite(os.path.join(self.preview_path, filename_prev), img_prev)
             cv2.imwrite(outpath, img)
             self.progress_queue.put((self.tube, "images processed", 1))
@@ -298,7 +298,7 @@ def manage_progress(progress_queue, progress_ui, all_done_event):
             else:
                 task_id = active_tasks[tube]
 
-            # Process the message based on the 'value'
+            # Process the message based on the "value"
             if description == "total images":
                 # Start of a new stage. Reset the bar to 0% and update the description.
                 progress_ui.reset(task_id, description=description, total=value, completed=0)
@@ -322,17 +322,6 @@ def run_job_wrapper(tube, args, progress_queue):
         traceback.print_exc() 
         return tube, f"Error: {e}"
 
-def error_callback(error, tube_name: str = None):
-    #print(f"\n[ERROR] An exception occurred in a worker process:")
-    #traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
-    prefix = f"{tube_name}: " if tube_name else ""
-    separator = "\n" + "="*80 + "\n"
-    logging.error("%s%sEXCEPTION IN WORKER%s\n%s%s",
-                  separator,
-                  prefix,
-                  separator,
-                  "".join(traceback.format_exception(type(error), error, error.__traceback__)),
-                  separator)
 
 def parse_tube_list(tube_args, available_tubes):
     """Get all selected tubes from input"""
@@ -363,7 +352,7 @@ def processor(args):
     """ main function to run the pipeline"""
 
     # Configure logger
-    log_path = os.path.join(args.raw_folder, '..')
+    log_path = os.path.join(args.raw_folder, "..")
     os.makedirs(log_path, exist_ok=True)
     logging.basicConfig(
         filename=f"{log_path}/pipeline.log",
@@ -435,40 +424,40 @@ def processor(args):
         progress_thread.join()
 
 
-if __name__ == '__main__':
-    argparser = argparse.ArgumentParser(description='Preprocessing pipeline for root segmentation')
+if __name__ == "__main__":
+    argparser = argparse.ArgumentParser(description="Preprocessing pipeline for root segmentation")
     argparser.add_argument(
-        '--raw_folder', 
+        "--raw_folder", 
         type=str,
-        help='The folder containing the files to process, sorted to their tubes.'
+        help="The folder containing the files to process, sorted to their tubes."
     )
     argparser.add_argument(
-        '--stitch_data', 
-        action='store_true', 
+        "--stitch_data", 
+        action="store_true", 
         default=False,
-        help='Whether to stitch L1 and L2 images together.' \
-             'In case of "Einzelarten" data, the images do not need stitching'
+        help="Whether to stitch L1 and L2 images together." \
+             "In case of 'Einzelarten' data, the images do not need stitching"
     )
     argparser.add_argument(
-        '--reference_path', 
+        "--reference_path", 
         default=None,
-        help='Reference base path containing all tubes of e.g. the previous year for timeseries alignment, ' \
-             'if not specified, will use the first image of each tube as reference by default'
+        help="Reference base path containing all tubes of e.g. the previous year for timeseries alignment, " \
+             "if not specified, will use the first image of each tube as reference by default"
     )
     argparser.add_argument(
-        '--tubes_list', 
+        "--tubes_list", 
         type=str, 
-        nargs='+', 
+        nargs="+", 
         default=None,
-        help='List of tubes to process. Input can be a list of tubes, e.g. "T1" "T10" or a range' \
-             'of tubes "1-10" - will automatically check for N/S orientation as well if range is given.' \
-             'If None, all tubes in the folder are processed.'
+        help="List of tubes to process. Input can be a list of tubes, e.g. 'T1' 'T10' or a range" \
+             "of tubes '1-10' - will automatically check for N/S orientation as well if range is given." \
+             "If None, all tubes in the folder are processed."
     )
     argparser.add_argument(
-        '--img_height', 
+        "--img_height", 
         type=int, 
         default = 8784,
-        help='Height of the images -- will be fixed for all to this value'
+        help="Height of the images -- will be fixed for all to this value"
     )
     args = argparser.parse_args()
     processor(args)

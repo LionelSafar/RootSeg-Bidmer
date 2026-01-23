@@ -20,7 +20,7 @@ class ConvBlock2D(nn.Module):
 
     2DConv -> SiLu -> GroupNorm -> 2DConv -> SiLu -> GroupNorm
     """
-    def __init__(self, out_channels, first: int = None, padding='valid'):
+    def __init__(self, out_channels, first: int = None, padding="valid"):
         super().__init__()
         if first:
             self.conv1 = nn.Conv2d(first, out_channels, kernel_size=3, padding=padding)
@@ -48,7 +48,7 @@ class TransformerBlock(nn.Module):
             dropout=dropout,
             bias=True,
             batch_first=True,
-            device='cpu'
+            device="cpu"
         )
         self.norm = nn.LayerNorm(dim)
         self.mlp = nn.Sequential(
@@ -92,7 +92,7 @@ def patch_expansion(x):
     takes from (N, H, W, C) --> (N, 2*H, 2*W, C/4) --> (N, C/4, 2*H, 2*W) patch expansion
     """
     C = x.shape[-1]
-    x = rearrange(x, 'b h w (p1 p2 c)-> b (h p1) (w p2) c', p1=2, p2=2, c=C // 4)
+    x = rearrange(x, "b h w (p1 p2 c)-> b (h p1) (w p2) c", p1=2, p2=2, c=C // 4)
     return x.permute(0, 3, 1, 2)
 
 
@@ -227,8 +227,8 @@ class SwinT_UNet(nn.Module):
         # Init normalisation to Imagenet pretrained values
         imagenet_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         imagenet_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        self.register_buffer('IMAGENET_MEAN', imagenet_mean)
-        self.register_buffer('IMAGENET_STD', imagenet_std)
+        self.register_buffer("IMAGENET_MEAN", imagenet_mean)
+        self.register_buffer("IMAGENET_STD", imagenet_std)
 
     def _input_norm(self, x: torch.Tensor) -> torch.Tensor:
         """Apply ImageNet mean and standard deviation normalization to the input tensor."""
@@ -248,7 +248,7 @@ class SwinT_UNet(nn.Module):
         x = self._input_norm(x)
         s0 = self.topconv(x)
         feats = self.encoder(x)
-        s1, s2, s3, s4 = feats['skip_1_4'], feats['skip_1_8'], feats['skip_1_16'], feats['bottleneck']
+        s1, s2, s3, s4 = feats["skip_1_4"], feats["skip_1_8"], feats["skip_1_16"], feats["bottleneck"]
         s1 = patch_expansion(s1)
         s2 = patch_expansion(s2)
         s3 = patch_expansion(s3)
@@ -317,8 +317,8 @@ class SwinB_UNet(nn.Module):
 
         imagenet_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         imagenet_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        self.register_buffer('IMAGENET_MEAN', imagenet_mean)
-        self.register_buffer('IMAGENET_STD', imagenet_std)
+        self.register_buffer("IMAGENET_MEAN", imagenet_mean)
+        self.register_buffer("IMAGENET_STD", imagenet_std)
 
     def _input_norm(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.IMAGENET_MEAN) / self.IMAGENET_STD
@@ -342,7 +342,7 @@ class SwinB_UNet(nn.Module):
         x = self._input_norm(x)
         s0 = self.topconv(x)
         feats = self.encoder(x)
-        s1, s2, s3, s4 = feats['skip_1_4'], feats['skip_1_8'], feats['skip_1_16'], feats['bottleneck']
+        s1, s2, s3, s4 = feats["skip_1_4"], feats["skip_1_8"], feats["skip_1_16"], feats["bottleneck"]
         s1 = patch_expansion(s1)
         s2 = patch_expansion(s2)
         s3 = patch_expansion(s3)

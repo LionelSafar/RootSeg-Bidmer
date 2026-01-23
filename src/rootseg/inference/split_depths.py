@@ -5,9 +5,9 @@ Further creates a .csv file containing soil area, masked area (blackened out reg
 
 import os
 import glob
+from typing import List, Tuple, Dict
 
 import numpy as np
-from typing import List, Tuple, Dict
 import cv2
 from PIL import Image
 import multiprocessing as mp
@@ -34,10 +34,10 @@ def get_tube_mask(filename: str, masklist: List[str]) -> str:
         mask_name = os.path.basename(mask_path)
         if tube_nr == mask_name.split("_")[1] and orientation == mask_name.split("_")[0][-1]:
             return mask_path
-    raise ValueError(f'No tube characteristic mask found for {filename}!')
+    raise ValueError(f"No tube characteristic mask found for {filename}!")
 
 
-def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
+def get_image_stack(path: str, mask_path: str=None) -> List[Tuple[str, str, str]]:
     """
     Return a list of tuples (processed_paths, segmented_paths, mask_paths) for a project folder
     
@@ -48,17 +48,21 @@ def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
         List[Tuple[str, str, str]]: Tuple of corresponding images with
             - (preprocessed image, segmentation, depthmask)
     """
-    processed_path = os.path.join(path, 'preprocessed')
-    segmented_path = os.path.join(path, 'segmented')
-    mask_path = os.path.abspath(os.path.join(path, '..', 'depth_masks'))
+    processed_path = os.path.join(path, "preprocessed")
+    segmented_path = os.path.join(path, "segmentation", "binary_roots")
+    if mask_path is None:
+        mask_path = os.path.abspath(os.path.join(path, "..", "depth_masks"))
 
-    processed_paths = glob.glob(os.path.join(processed_path, '**', '*.tiff'), recursive=True)
-    processed_paths.extend(glob.glob(os.path.join(processed_path, '**', '*.png'), recursive=True))
-    mask_paths = glob.glob(os.path.join(mask_path, '*.tiff'))
-    mask_paths.extend(glob.glob(os.path.join(mask_path, '*.png')))
+    processed_paths = glob.glob(os.path.join(processed_path, "**", "*.tiff"), recursive=True)
+    processed_paths.extend(glob.glob(os.path.join(processed_path, "**", "*.png"), recursive=True))
+    mask_paths = glob.glob(os.path.join(mask_path, "*.tiff"))
+    mask_paths.extend(glob.glob(os.path.join(mask_path, "*.png")))
 
-    segmented_paths = glob.glob(os.path.join(segmented_path, '**', '*.tiff'), recursive=True)
-    segmented_paths.extend(glob.glob(os.path.join(segmented_path, '**', '*.png'), recursive=True))
+    if len(mask_paths) < 1:
+        raise ValueError(f"Incorrect path for depth masks provided or folder is empty: {mask_path}")
+
+    segmented_paths = glob.glob(os.path.join(segmented_path, "**", "*.tiff"), recursive=True)
+    segmented_paths.extend(glob.glob(os.path.join(segmented_path, "**", "*.png"), recursive=True))
 
     processed_paths.sort(key=os.path.basename)
     segmented_paths.sort(key=os.path.basename)
@@ -68,8 +72,7 @@ def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
     for p_p, p_s in zip(processed_paths, segmented_paths):
         base_proc = os.path.splitext(os.path.basename(p_p))[0]
         base_seg = os.path.basename(p_s).replace("_segmented.png", "") # such that segmentation name == processed name
-        base_seg = os.path.splitext(os.path.basename(p_s))[0]
-
+        #base_seg = os.path.splitext(os.path.basename(p_s))[0]
         if base_proc != base_seg:
             print(f"[Mismatch] Processed: {p_p} | Segmented: {p_s}")
 
@@ -92,8 +95,8 @@ def worker_process(path: str) -> Dict:
     outpath = path[1]
 
     parts = os.path.basename(path[0][0]).split("_")
-    n1 = '0_10cm'
-    n2 = '10_Xcm'
+    n1 = "0_10cm"
+    n2 = "10_Xcm"
 
     parts1 = parts.copy()
     parts2 = parts.copy()
@@ -106,21 +109,21 @@ def worker_process(path: str) -> Dict:
     out2 = os.path.join(outpath, "_".join(parts2))
 
     H, W = img.shape[:2]
-    # Error case - size missmatch between segmentation and preprocessed image - return NaN's for area
+    # Error case - size missmatch between segmentation and preprocessed image - return NaN"s for area
     if seg.shape[:2] != (H, W):
-        print(f'WARNING DIFFERENT SHAPE OF segmented image {path[0][1]} and im {path[0][0]} -- SKIPPED!')
-        print(f'shapes are {img.shape} for img and {seg.shape} -- return NaNs')
+        print(f"WARNING DIFFERENT SHAPE OF segmented image {path[0][1]} and im {path[0][0]} -- SKIPPED!")
+        print(f"shapes are {img.shape} for img and {seg.shape} -- return NaNs")
         return [{
-            'filename': os.path.basename(out1),
-            'image_area_px2': np.nan,
-            'excluded_area_px2': np.nan,
-            'excluded_area_fraction': np.nan
+            "filename": os.path.basename(out1),
+            "image_area_px2": np.nan,
+            "excluded_area_px2": np.nan,
+            "excluded_area_fraction": np.nan
             },
             {
-            'filename': os.path.basename(out2),
-            'image_area_px2': np.nan,
-            'excluded_area_px2': np.nan,
-            'excluded_area_fraction': np.nan
+            "filename": os.path.basename(out2),
+            "image_area_px2": np.nan,
+            "excluded_area_px2": np.nan,
+            "excluded_area_fraction": np.nan
             }]
 
     # If mask is smaller than the image, extend image with values 200 (=depth 20+cm)
@@ -152,16 +155,16 @@ def worker_process(path: str) -> Dict:
 
 
     results =  [{
-            'filename': os.path.basename(out1),
-            'image_area_px2': area_0_10,
-            'excluded_area_px2': black_0_10,
-            'excluded_area_fraction': black_0_10 / area_0_10
+            "filename": os.path.basename(out1),
+            "image_area_px2": area_0_10,
+            "excluded_area_px2": black_0_10,
+            "excluded_area_fraction": black_0_10 / area_0_10
             },
             {
-            'filename': os.path.basename(out2),
-            'image_area_px2': area_10_X,
-            'excluded_area_px2': black_10_X,
-            'excluded_area_fraction': black_10_X / area_10_X
+            "filename": os.path.basename(out2),
+            "image_area_px2": area_10_X,
+            "excluded_area_px2": black_10_X,
+            "excluded_area_fraction": black_10_X / area_10_X
             }
     ]
     
@@ -174,8 +177,8 @@ def get_checkpoints(args, image_stack):
     outpath = args.outpath
     for proc_path, seg_path, mask_path in image_stack:
         parts = os.path.basename(proc_path).split("_")
-        n1 = '0_10cm'
-        n2 = '10_Xcm'
+        n1 = "0_10cm"
+        n2 = "10_Xcm"
         parts1 = parts.copy()
         parts2 = parts.copy()
         parts1.insert(2, n1)
@@ -191,16 +194,15 @@ def get_checkpoints(args, image_stack):
     return filtered_stack, count
 
 
-
 def main(args):
     """Main function"""
-    img_stack = get_image_stack(args.path)
+    img_stack = get_image_stack(args.data_path, args.depth_mask_folder)
     N = len(img_stack)
-    args.outpath = os.path.join(args.path, 'split_depths')
+    args.outpath = os.path.join(args.data_path, "split_depths")
     os.makedirs(args.outpath, exist_ok=True)
 
     # Initialise results, load previous checkpoint
-    outfile = os.path.join(args.outpath, "metrics.csv")
+    outfile = os.path.join(args.outpath, "area_metrics.csv")
     if os.path.exists(outfile):
         df = pd.read_csv(outfile)
         df = df.dropna(how="all")
@@ -208,7 +210,7 @@ def main(args):
     else:
         # unclean way, but works
         df = pd.DataFrame(
-            columns=['filename', 'image_area_px2', 'excluded_area_px2', 'excluded_area_fraction']
+            columns=["filename", "image_area_px2", "excluded_area_px2", "excluded_area_fraction"]
         )
         count = 0
 
@@ -235,9 +237,9 @@ def main(args):
             # Consume Iterator -> note that the for loop repeatedly calls next(iterator) -> blocking
             for rows in pool.imap_unordered(worker_process, worker_args):
                 for row in rows:
-                    filename = row['filename']
-                    if filename in df['filename'].values: # overwrite row
-                        df.loc[df['filename'] == filename, :] = pd.DataFrame([row])
+                    filename = row["filename"]
+                    if filename in df["filename"].values: # overwrite row
+                        df.loc[df["filename"] == filename, :] = pd.DataFrame([row])
                     else: # concatenate row to the df
                         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
                 progress.update(task, advance=1)
@@ -249,9 +251,14 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--path", 
+        "--data_path", 
         type=str, 
         help="path to the data basefolder containing subfolders with segmented images, processed images etc."
+    )
+    parser.add_argument(
+        "--depth_mask_folder",
+        type=str,
+        help="folder with depth masks per tube"
     )
     Image.MAX_IMAGE_PIXELS = 200000000 # Avoid DecompressionBombWarning from PIL
     args = parser.parse_args()

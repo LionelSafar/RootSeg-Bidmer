@@ -12,9 +12,9 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
 
     Args:
         seg_map (np.ndarray): The 2D array of class indices (H, W), with values 0 to 6.
-        save_path (str): The full path to save the output image (e.g., 'colored_seg.png').
+        save_path (str): The full path to save the output image (e.g., "colored_seg.png").
         class_names (list, optional): List of class names corresponding to indices 0-6.
-                                      Defaults to ['Class 0', ..., 'Class 6'].
+                                      Defaults to ["Class 0", ..., "Class 6"].
     """
 
     # Include Soil class to plotting as well
@@ -23,12 +23,12 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
 
     classes = ["Soil"] + class_names
     num_classes = len(classes)
-    colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:olive', 'tab:pink']
+    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:olive", "tab:pink"]
     cmap = plt.matplotlib.colors.ListedColormap(colors[:num_classes])
 
     N_plots = len(image_list)
     if segmented_list is not None:
-        title_names = ['Input', 'Label', 'Prediction']
+        title_names = ["Input", "Label", "Prediction"]
         scaling_factor = 2.5 # scale factor for text
         fig, axs = plt.subplots(N_plots, 3, figsize=(17, 25))
         for i in range(N_plots):
@@ -39,9 +39,9 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
             pred = predicted_list[i]
             axs[i, 0].imshow(img)
             axs[i, 1].imshow(seg, cmap=cmap, 
-                vmin=-0.5, vmax=num_classes - 0.5, interpolation='none')
+                vmin=-0.5, vmax=num_classes - 0.5, interpolation="none")
             axs[i, 2].imshow(pred, cmap=cmap, 
-                vmin=-0.5, vmax=num_classes - 0.5, interpolation='none')
+                vmin=-0.5, vmax=num_classes - 0.5, interpolation="none")
             if i==0:
                 for k, title in enumerate(title_names):
                     axs[i, k].set_title(title, fontsize=12*scaling_factor)
@@ -51,7 +51,7 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
                 patches.append(mpatches.Patch(color=color, label=classes[j]))
 
     else: # No ground truth given
-        title_names = ['Input', 'Prediction']
+        title_names = ["Input", "Prediction"]
         pad = 512-388
         scaling_factor = 2.5 # scale factor for text
         fig, axs = plt.subplots(N_plots, 2, figsize=(14, 25))
@@ -62,7 +62,7 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
             pred = predicted_list[i]
             axs[i, 0].imshow(img)
             axs[i, 1].imshow(pred, cmap=cmap, 
-                vmin=-0.5, vmax=num_classes - 0.5, interpolation='none')
+                vmin=-0.5, vmax=num_classes - 0.5, interpolation="none")
             if i==0:
                 for k, title in enumerate(title_names):
                     axs[i, k].set_title(title, fontsize=12*scaling_factor)
@@ -73,7 +73,7 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
 
     fig.legend(handles=patches, 
            title="Category", 
-           loc='lower center', 
+           loc="lower center", 
            bbox_to_anchor=(0.5, -0.05), 
            ncol=4, 
            frameon=False,
@@ -83,13 +83,13 @@ def plot_multiclass_segmentation(image_list: list, predicted_list: list,
            handletextpad=scaling_factor//2
          )
     for ax in axs.ravel():
-        ax.axis('off')
+        ax.axis("off")
 
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     if savename is None:
-        plt.savefig(savepath+'/model_inf.pdf', format='pdf', dpi=300, bbox_inches='tight')
+        plt.savefig(savepath+"/model_inf.pdf", format="pdf", dpi=300, bbox_inches="tight")
     else:
-        plt.savefig(savepath+savename, format='pdf', dpi=300, bbox_inches='tight')
+        plt.savefig(savepath+savename, format="pdf", dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -101,22 +101,22 @@ def visualize_multiclass(segmentation, class_names, savepath):
     # Set Background as Soil
     classes = ["Soil"] + class_names
     num_classes = len(classes)
-    class_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:olive', 'tab:pink']
+    class_colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:olive", "tab:pink"]
     cmap = plt.matplotlib.colors.ListedColormap(class_colors[:num_classes])
     fig, ax = plt.subplots(figsize=(8, 8))
-    img_plot = ax.imshow(segmentation, cmap=cmap, vmin=-0.5, vmax=len(classes) - 0.5, interpolation='none')
+    img_plot = ax.imshow(segmentation, cmap=cmap, vmin=-0.5, vmax=len(classes) - 0.5, interpolation="none")
     ax.set_title("Multiclass Segmentation Result")
-    ax.axis('off')
+    ax.axis("off")
     patches = []
     for i in range(num_classes):
         color = cmap(i)
         patches.append(mpatches.Patch(color=color, label=classes[i]))
     ax.legend(handles=patches, 
               title="Classes", 
-              loc='center left', 
+              loc="center left", 
               bbox_to_anchor=(1.05, 0.5),
               frameon=False)
-    plt.savefig(savepath, dpi=300, bbox_inches='tight')
+    plt.savefig(savepath, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 

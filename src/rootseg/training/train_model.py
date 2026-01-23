@@ -4,14 +4,14 @@ Training script to train a single-, or multiclass-segmenter
 """
 import os
 import glob
-import argparse
 
+import argparse
 import torch
 from torch.utils.data import DataLoader
 
+from rootseg.training.logger import DataLogger
 from rootseg.training.datasets import TrainDataset_torch, ValDataset_torch, PrefetchWrapper, seed_worker
 from rootseg.training.models import UNet, SwinT_UNet, SwinB_UNet
-from rootseg.training.logger import DataLogger
 from rootseg.training.training import training_loop, CosineAnnealingWarmRestartsDecay
 
 
@@ -20,30 +20,30 @@ def train_model(args):
     # Torch init
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     g = torch.Generator()
-    torch.multiprocessing.set_start_method('spawn', force=True)
+    torch.multiprocessing.set_start_method("spawn", force=True)
     g.manual_seed(42)
 
     # select class and corresponding model output size
-    if args.class_selection == 'roots':
+    if args.class_selection == "roots":
         class_names = None
         output_size = 1
-    elif args.class_selection == 'carex':
-        class_names = ['Carex', 'Non-Carex']
+    elif args.class_selection == "carex":
+        class_names = ["Carex", "Non-Carex"]
         output_size = 2
-    elif  args.class_selection == 'multispecies':
-        class_names = ['Anthox', 'Geum', 'Carex', 'Leontodon', 'Potentilla', 'Helictotrichon']
+    elif  args.class_selection == "multispecies":
+        class_names = ["Anthox", "Geum", "Carex", "Leontodon", "Potentilla", "Helictotrichon"]
         output_size = 7
-    elif args.class_selection == 'classes':
-        class_names = ['Carex', 'Graminoids', 'Herbs']
+    elif args.class_selection == "classes":
+        class_names = ["Carex", "Graminoids", "Herbs"]
         output_size = 3
     
     # Load train and val images and labels as list of sorted paths (corresponding X, y pairs)
-    if args.basedir.endswith('/'):
+    if args.basedir.endswith("/"):
         args.basedir = args.basedir[:-1]
-    X_train_dir = os.path.join(args.basedir, 'train', 'images')
-    y_train_dir = os.path.join(args.basedir, 'train', 'annotations')
-    X_val_dir = os.path.join(args.basedir, 'val', 'images')
-    y_val_dir = os.path.join(args.basedir, 'val', 'annotations')
+    X_train_dir = os.path.join(args.basedir, "train", "images")
+    y_train_dir = os.path.join(args.basedir, "train", "annotations")
+    X_val_dir = os.path.join(args.basedir, "val", "images")
+    y_val_dir = os.path.join(args.basedir, "val", "annotations")
 
     X_train = sorted(glob.glob(os.path.join(X_train_dir, "*")))
     y_train = sorted(glob.glob(os.path.join(y_train_dir, "*")))
@@ -52,7 +52,7 @@ def train_model(args):
 
     # Set model input and output size, based on whether basic U-Net or Swin-Transformer backed U-Net is used
     # NOTE: For Transformer-based models the increased receptive field leads to performance improvement
-    if args.model.lower() == 'unet':
+    if args.model.lower() == "unet":
         in_size = 572
         outsize = 388
     else: # multiclass networks
@@ -60,13 +60,13 @@ def train_model(args):
         outsize = 644
 
     # Initialise model
-    if args.model.lower() == 'unet':
+    if args.model.lower() == "unet":
         model = UNet(64, output_size, 4)
         crop_annot = True
-    elif args.model.lower() == 'swin_b':
+    elif args.model.lower() == "swin_b":
         model = SwinB_UNet(output_size)
         crop_annot = True
-    elif args.model.lower() == 'swin_t':
+    elif args.model.lower() == "swin_t":
         model = SwinT_UNet(output_size)
         crop_annot = True
     
@@ -103,15 +103,16 @@ def train_model(args):
     logger = DataLogger(class_names=class_names)
     os.makedirs(args.save_path, exist_ok=True)
     if args.identifier:
-        save_path = f'{args.save_path}/{args.model.lower()}_{args.identifier}/'
-        model_name = args.model.lower()+'_'+args.identifier
+        save_path = f"{args.save_path}/{args.model.lower()}_{args.identifier}/"
+        model_name = args.model.lower()+"_"+args.identifier
     else:
-         save_path = f'{args.save_path}/{args.model.lower()}/'
+         save_path = f"{args.save_path}/{args.model.lower()}/"
          model_name = args.model.lower()
-    current_dir = os.getcwd()
-    figpath = os.path.abspath(os.path.join(current_dir, 'figures', model_name))
+    checkpointpath = os.path.join(save_path, "checkpoints")
+    figpath = os.path.join(save_path, "figures")
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(figpath, exist_ok=True)
+    os.makedirs(checkpointpath, exist_ok=True)
 
 
     #optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay, nesterov=True)
@@ -140,7 +141,7 @@ def train_model(args):
         val_loader, 
         epochs=args.epochs, 
         alpha=args.alpha, 
-        save_path=save_path, 
+        save_path=checkpointpath, 
         logger=logger, 
         device=device, 
         gamma=args.gamma,
@@ -148,11 +149,11 @@ def train_model(args):
     )
 
     # save final model
-    torch.save(model.state_dict(), save_path+"model.pth")
+    torch.save(model.state_dict(), checkpointpath + "/model.pth")
     
     # Save training curves and training metrics
-    logger.plot_metrics(model_name=model_name)
-    logger.save(save_path + '/metrics.h5')
+    logger.plot_metrics(path=figpath)
+    logger.save(checkpointpath + "/metrics.h5")
     
     # Additionally save some of the validation images
     #N_samples = 5
@@ -178,7 +179,7 @@ def train_model(args):
     #    y_pred_batch = torch.argmax(logits, dim=1)
     #pred_list = [y_pred.detach().cpu().numpy() for y_pred in y_pred_batch]
     #plot_multiclass_segmentation(img_list, pred_list, figpath, class_names, segmented_list=seg_list)
-    print('Training successfully finished!')
+    print("Training successfully finished!")
 
 
 if __name__ == "__main__":
@@ -192,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path", 
         type=str, 
-        default="checkpoints/",
+        default="trained_models/",
         help="Path to save the model checkpoints"
     )
     parser.add_argument(
@@ -218,20 +219,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size", 
         type=int, 
-        default=5,
+        default=8,
         help="Batch size for training"
     )
     parser.add_argument(
         "--learning_rate", 
         type=float, 
-        default=5e-2,
+        default=1.5e-4,
         help="Initial base learning rate for cosine annealing"
     )
     parser.add_argument(
         "--weight_decay", 
         type=float, 
-        default=0,
-        help='weight decay for the optimizer (AdamW used)'
+        default=5e-6,
+        help="weight decay for the optimizer (AdamW used)"
     )
     parser.add_argument(
         "--min_lr", 
@@ -242,19 +243,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--alpha", 
         type=float, 
-        default=0.3,
+        default=0.35,
         help="Weight for the combined loss, specifically the weight for cross-entropy"
     )
     parser.add_argument(
         "--gamma", 
         type=float, 
-        default=0.5,
-        help='factor for elastic deformation within [0, 1]'
+        default=1.2,
+        help="factor for elastic deformation within [0, 1]"
     )
     parser.add_argument(
         "--identifier", 
         type=str, 
-        default='',
+        default="default",
         help="identifier label for the trained network and figure saving"
     )
     args = parser.parse_args()

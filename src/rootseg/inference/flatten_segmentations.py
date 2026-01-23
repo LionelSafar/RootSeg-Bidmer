@@ -24,14 +24,14 @@ from rich.progress import (
 
 def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
     """Return a list of tuples (processed_paths, segmented_paths) for a project folder"""
-    processed_path = os.path.join(path, 'preprocessed')
-    segmented_path = os.path.join(path, 'segmented')
+    processed_path = os.path.join(path, "preprocessed")
+    segmented_path = os.path.join(path, "segmentation", "binary_roots")
 
-    processed_paths = glob.glob(os.path.join(processed_path, '**', '*.tiff'), recursive=True)
-    processed_paths.extend(glob.glob(os.path.join(processed_path, '**', '*.png'), recursive=True))
+    processed_paths = glob.glob(os.path.join(processed_path, "**", "*.tiff"), recursive=True)
+    processed_paths.extend(glob.glob(os.path.join(processed_path, "**", "*.png"), recursive=True))
 
-    segmented_paths = glob.glob(os.path.join(segmented_path, '**', '*.tiff'), recursive=True)
-    segmented_paths.extend(glob.glob(os.path.join(segmented_path, '**', '*.png'), recursive=True))
+    segmented_paths = glob.glob(os.path.join(segmented_path, "**", "*.tiff"), recursive=True)
+    segmented_paths.extend(glob.glob(os.path.join(segmented_path, "**", "*.png"), recursive=True))
 
     processed_paths.sort(key=os.path.basename)
     segmented_paths.sort(key=os.path.basename)
@@ -59,17 +59,17 @@ def worker_process(path) -> Dict:
 
     H, W = img.shape[:2]
     if seg.shape[:2] != (H, W):
-        print(f'WARNING DIFFERENT SHAPE OF segmented image {path[0][1]} and im {path[0][0]} -- SKIPPED!')
-        print(f'shapes are {img.shape} for img and {seg.shape} -- return NaNs')
+        print(f"WARNING DIFFERENT SHAPE OF segmented image {path[0][1]} and im {path[0][0]} -- SKIPPED!")
+        print(f"shapes are {img.shape} for img and {seg.shape} -- return NaNs")
         return [{
-            'filename': os.path.basename(out),
-            'image_area_px2': np.nan,
-            'excluded_area_px2': np.nan,
-            'excluded_area_fraction': np.nan
+            "filename": os.path.basename(out),
+            "image_area_px2": np.nan,
+            "excluded_area_px2": np.nan,
+            "excluded_area_fraction": np.nan
             }]
 
     # Get image area per depth and masked (black) area per depth
-    if '_T1_' in os.path.basename(out): 
+    if "_T1_" in os.path.basename(out): 
         #NOTE: T1 we neglect the area loss due to a masked out Agrostis root, as it should barely 
         # affects any other root but the mask includes a significant area of soil
         cutoff = 3 * W // 4
@@ -82,10 +82,10 @@ def worker_process(path) -> Dict:
     img_new.save(out, compression="tiff_deflate")
 
     results =  [{
-            'filename': os.path.basename(out),
-            'image_area_px2': area_img,
-            'excluded_area_px2': black_area,
-            'excluded_area_fraction': black_area / area_img
+            "filename": os.path.basename(out),
+            "image_area_px2": area_img,
+            "excluded_area_px2": black_area,
+            "excluded_area_fraction": black_area / area_img
             }]
     
     return results
@@ -108,21 +108,20 @@ def get_checkpoints(args, image_stack):
 
 def main(args):
     """Main file"""
-    img_stack = get_image_stack(args.path)
+    img_stack = get_image_stack(args.data_path)
     N = len(img_stack)
-    print('N', N)
-    args.outpath = os.path.join(args.path, 'segmented_flattened')
+    args.outpath = os.path.join(args.data_path, "segmented_flattened")
     os.makedirs(args.outpath, exist_ok=True)
 
     # Initialise results, load previous checkpoint
-    outfile = os.path.join(args.outpath, "metrics.csv")
+    outfile = os.path.join(args.outpath, "area_metrics.csv")
     if os.path.exists(outfile):
         df = pd.read_csv(outfile)
         df = df.dropna(how="all")
         img_stack, count = get_checkpoints(args, img_stack)
     else:
         df = pd.DataFrame(
-            columns=['filename', 'image_area_px2', 'excluded_area_px2', 'excluded_area_fraction']
+            columns=["filename", "image_area_px2", "excluded_area_px2", "excluded_area_fraction"]
             )
         count = 0
 
@@ -148,9 +147,9 @@ def main(args):
             # Consume Iterator -> note that the for loop repeatedly calls next(iterator) -> blocking
             for rows in pool.imap_unordered(worker_process, worker_args):
                 for row in rows:
-                    filename = row['filename']
-                    if filename in df['filename'].values:
-                        df.loc[df['filename'] == filename, :] = pd.DataFrame([row])
+                    filename = row["filename"]
+                    if filename in df["filename"].values:
+                        df.loc[df["filename"] == filename, :] = pd.DataFrame([row])
                     else:
                         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
                 progress.update(task, advance=1)
@@ -162,7 +161,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", type=str, help="path to the data basefolder")
+    parser.add_argument("--data_path", type=str, help="path to the data basefolder")
 
     Image.MAX_IMAGE_PIXELS = 200000000 # Avoid DecompressionBombWarning from PIL
 

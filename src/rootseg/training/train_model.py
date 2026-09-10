@@ -7,7 +7,7 @@ import glob
 
 import argparse
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 
 from rootseg.training.logger import DataLogger
 from rootseg.training.datasets import TrainDataset_torch, ValDataset_torch, PrefetchWrapper, seed_worker
@@ -17,7 +17,7 @@ from rootseg.training.training import training_loop, CosineAnnealingWarmRestarts
 
 def train_model(args):
 
-    # Torch init
+    # Torch initialisation
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     g = torch.Generator()
     torch.multiprocessing.set_start_method("spawn", force=True)
@@ -59,37 +59,106 @@ def train_model(args):
         in_size = 768
         outsize = 644
 
+    # If using transfer learning, don't load pretrained backbones, since trained weights will be overwritten
+    if args.pretrained_model:
+        use_pretrained_backbone = False
+    else:
+        use_pretrained_backbone = True
+        
+
     # Initialise model
     if args.model.lower() == "unet":
         model = UNet(64, output_size, 4)
-        crop_annot = True
     elif args.model.lower() == "swin_b":
-        model = SwinB_UNet(output_size)
-        crop_annot = True
+        model = SwinB_UNet(output_size, pretrained=use_pretrained_backbone)
     elif args.model.lower() == "swin_t":
-        model = SwinT_UNet(output_size)
-        crop_annot = True
-    
-    # Initialise training and validation datasets
+        model = SwinT_UNet(output_size, pretrained=use_pretrained_backbone)
+
+
+     # Initialise training and validation datasets
     train_dataset = TrainDataset_torch(
         X_train, y_train, N_subimgs=30, multiclass=output_size>1, 
-        imgsize=in_size, outsize=outsize, crop_annot=crop_annot
+        imgsize=in_size, outsize=outsize, crop_annot=True
     )
     val_dataset = ValDataset_torch(
         X_val, y_val, multiclass=output_size>1, imgsize=in_size, 
-        outsize=outsize, crop_annot=crop_annot
+        outsize=outsize, crop_annot=True
     )
 
-    # Initialise dataloader and wrap them
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=15,
-        worker_init_fn=seed_worker,
-        generator=g,
-        pin_memory=True
-    )
+    # Transfer learning case -- load pretrained model and merge train data with finetune dataset
+    # Uses a reduced lr and no warm restarts in the learning
+    if args.pretrained_model:
+        model.load_state_dict(torch.load(args.pretrained_model))
+        X_transfer_dir = os.path.join(args.basedir, "transfer", "images")
+        y_transfer_dir = os.path.join(args.basedir, "transfer", "annotations")
+
+        X_transfer = sorted(glob.glob(os.path.join(X_transfer_dir, "*")))
+        y_transfer = sorted(glob.glob(os.path.join(y_transfer_dir, "*")))
+        transfer_dataset = TrainDataset_torch(
+            X_transfer, y_transfer, N_subimgs=30, multiclass=output_size>1, 
+            imgsize=in_size, outsize=outsize, crop_annot=True
+        )
+
+        # Create a sampler that takes new and old data for 50% of the time - however we allow replacement here
+        n_old = len(train_dataset)
+        n_new = len(transfer_dataset)
+        weights = ([0.5 / n_old] * n_old + [0.5 / n_new] * n_new)
+        sampler = WeightedRandomSampler(
+            weights=weights,
+            num_samples=2 * n_new,
+            replacement=True
+        )
+
+        train_dataset = ConcatDataset([train_dataset, transfer_dataset]) #concatenate new and old data
+
+        # Use sampler instead of shuffle
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            sampler=sampler,
+            num_workers=15,
+            worker_init_fn=seed_worker,
+            generator=g,
+            pin_memory=True
+        )
+        epochs = args.epochs
+        optimizer = torch.optim.AdamW(
+            model.parameters(), 
+            lr=args.learning_rate//5, # take 1/5 of the lr for finetuning
+            weight_decay=args.weight_decay 
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=epochs, # use a single decay -- no annealing
+            eta_min=args.min_lr
+        )
+
+    else:
+        # Initialise dataloader and wrap them
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=15,
+            worker_init_fn=seed_worker,
+            generator=g,
+            pin_memory=True
+        )
+        # Initialise optimizer and LR scheduler in standard cosine annealing with given lr
+        optimizer = torch.optim.AdamW(
+            model.parameters(), 
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay 
+        )
+        scheduler = CosineAnnealingWarmRestartsDecay(
+            optimizer, 
+            T_0=10, 
+            T_mult=2, 
+            eta_min=args.min_lr,
+            lr_decay_factor=0.8
+        )
+        epochs = args.epochs
+
     val_loader = DataLoader(val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
@@ -99,7 +168,7 @@ def train_model(args):
     train_loader = PrefetchWrapper(train_loader, device, 2)
     val_loader = PrefetchWrapper(val_loader, device, 2)
     
-    # Initialise logger and saving directorier
+    # Initialise logger and saving directories
     logger = DataLogger(class_names=class_names)
     os.makedirs(args.save_path, exist_ok=True)
     if args.identifier:
@@ -114,23 +183,6 @@ def train_model(args):
     os.makedirs(figpath, exist_ok=True)
     os.makedirs(checkpointpath, exist_ok=True)
 
-
-    #optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay, nesterov=True)
-
-    # Initialise optimizer and LR scheduler
-    optimizer = torch.optim.AdamW(
-        model.parameters(), 
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay 
-    )
-    scheduler = CosineAnnealingWarmRestartsDecay(
-        optimizer, 
-        T_0=10, 
-        T_mult=2, 
-        eta_min=args.min_lr,
-        lr_decay_factor=0.8
-    )
-
     # Train model
     model = model.to(device)
     _, logger = training_loop(
@@ -139,7 +191,7 @@ def train_model(args):
         scheduler, 
         train_loader, 
         val_loader, 
-        epochs=args.epochs, 
+        epochs=epochs, 
         alpha=args.alpha, 
         save_path=checkpointpath, 
         logger=logger, 
@@ -155,30 +207,6 @@ def train_model(args):
     logger.plot_metrics(path=figpath)
     logger.save(checkpointpath + "/metrics.h5")
     
-    # Additionally save some of the validation images
-    #N_samples = 5
-    #idxs = np.random.randint(0, len(val_dataset), N_samples)
-    #img_list = []
-    #to_model = []
-    #seg_list = []
-    #pred_list = []
-
-    #for idx in idxs:
-    #    X, y_gt = val_dataset[idx] 
-    #    img_list.append(X.permute(1, 2, 0).numpy())
-    #    to_model.append(X)
-    #    seg_list.append(y_gt.permute(1, 2, 0).squeeze(2).numpy()) #to (H, W)
-    #X_batch = torch.stack(to_model).to(device)
-    #with torch.no_grad():
-        # Take GT mask for plotting here..
-    #    if X_batch.shape[-1] == seg_list[0].shape[-1]:
-            #seg_batch = torch.stack(seg_list).to(device)
-    #        logits = model(X_batch) 
-    #    else:
-    #        logits = model(X_batch) 
-    #    y_pred_batch = torch.argmax(logits, dim=1)
-    #pred_list = [y_pred.detach().cpu().numpy() for y_pred in y_pred_batch]
-    #plot_multiclass_segmentation(img_list, pred_list, figpath, class_names, segmented_list=seg_list)
     print("Training successfully finished!")
 
 
@@ -196,6 +224,7 @@ if __name__ == "__main__":
         default="trained_models/",
         help="Path to save the model checkpoints"
     )
+
     parser.add_argument(
         "--class_selection",
         choices=["roots", "carex", "multispecies", "classes"],
@@ -237,7 +266,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min_lr", 
         type=float, 
-        default=5e-2,
+        default=5e-7,
         help="minimum learning rate for cosine annealing"
     )
     parser.add_argument(
@@ -250,13 +279,21 @@ if __name__ == "__main__":
         "--gamma", 
         type=float, 
         default=1.2,
-        help="factor for elastic deformation within [0, 1]"
+        help="factor for focal loss"
     )
     parser.add_argument(
         "--identifier", 
         type=str, 
         default="default",
         help="identifier label for the trained network and figure saving"
+    )
+
+    parser.add_argument(
+        "--pretrained_model",
+        type=str,
+        default=None,
+        help="if transfer learning, indicate the path of the pretrained model. It is assumed that the model is" \
+             "the same type as indicated in 'model'."
     )
     args = parser.parse_args()
 

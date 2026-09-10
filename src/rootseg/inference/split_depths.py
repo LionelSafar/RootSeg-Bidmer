@@ -37,7 +37,7 @@ def get_tube_mask(filename: str, masklist: List[str]) -> str:
     raise ValueError(f"No tube characteristic mask found for {filename}!")
 
 
-def get_image_stack(path: str, mask_path: str=None) -> List[Tuple[str, str, str]]:
+def get_image_stack(path: str, mask_path: str=None, category: str=None) -> List[Tuple[str, str, str]]:
     """
     Return a list of tuples (processed_paths, segmented_paths, mask_paths) for a project folder
     
@@ -49,7 +49,10 @@ def get_image_stack(path: str, mask_path: str=None) -> List[Tuple[str, str, str]
             - (preprocessed image, segmentation, depthmask)
     """
     processed_path = os.path.join(path, "preprocessed")
-    segmented_path = os.path.join(path, "segmentation", "binary_roots")
+    if category is not None:
+        segmented_path = os.path.join(path, "segmentation", f"binary_{category.lower()}")
+    else:
+        segmented_path = os.path.join(path, "segmentation", "binary_roots") ## check
     if mask_path is None:
         mask_path = os.path.abspath(os.path.join(path, "..", "depth_masks"))
 
@@ -57,6 +60,8 @@ def get_image_stack(path: str, mask_path: str=None) -> List[Tuple[str, str, str]
     processed_paths.extend(glob.glob(os.path.join(processed_path, "**", "*.png"), recursive=True))
     mask_paths = glob.glob(os.path.join(mask_path, "*.tiff"))
     mask_paths.extend(glob.glob(os.path.join(mask_path, "*.png")))
+
+
 
     if len(mask_paths) < 1:
         raise ValueError(f"Incorrect path for depth masks provided or folder is empty: {mask_path}")
@@ -77,7 +82,6 @@ def get_image_stack(path: str, mask_path: str=None) -> List[Tuple[str, str, str]
             print(f"[Mismatch] Processed: {p_p} | Segmented: {p_s}")
 
         image_stack.append((p_p, p_s, get_tube_mask(p_p, mask_paths)))
-    print(len(image_stack))
     return image_stack
 
 
@@ -196,13 +200,18 @@ def get_checkpoints(args, image_stack):
 
 def main(args):
     """Main function"""
-    img_stack = get_image_stack(args.data_path, args.depth_mask_folder)
+    if args.classification:
+        img_stack = get_image_stack(args.data_path, args.depth_mask_folder, category=args.classification.lower())
+        args.outpath = os.path.join(args.data_path, f"split_depths_{args.classification.lower()}")
+        outfile = os.path.join(args.outpath, f"area_metrics_{args.classification.lower()}.csv")
+    else:
+        img_stack = get_image_stack(args.data_path, args.depth_mask_folder)
+        args.outpath = os.path.join(args.data_path, "split_depths")
+        outfile = os.path.join(args.outpath, "area_metrics.csv")
     N = len(img_stack)
-    args.outpath = os.path.join(args.data_path, "split_depths")
     os.makedirs(args.outpath, exist_ok=True)
 
     # Initialise results, load previous checkpoint
-    outfile = os.path.join(args.outpath, "area_metrics.csv")
     if os.path.exists(outfile):
         df = pd.read_csv(outfile)
         df = df.dropna(how="all")
@@ -238,6 +247,7 @@ def main(args):
             for rows in pool.imap_unordered(worker_process, worker_args):
                 for row in rows:
                     filename = row["filename"]
+                    print(row)
                     if filename in df["filename"].values: # overwrite row
                         df.loc[df["filename"] == filename, :] = pd.DataFrame([row])
                     else: # concatenate row to the df
@@ -259,6 +269,11 @@ if __name__ == "__main__":
         "--depth_mask_folder",
         type=str,
         help="folder with depth masks per tube"
+    )
+    parser.add_argument(
+        "--classification",
+        default="",
+        help="For multiclass images define class"
     )
     Image.MAX_IMAGE_PIXELS = 200000000 # Avoid DecompressionBombWarning from PIL
     args = parser.parse_args()

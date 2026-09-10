@@ -1,7 +1,75 @@
+"""
+This script contains helper functions for visualising segmented images
+"""
+
+
 import numpy as np 
+
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from PIL import Image
+from typing import List
+import torch
+
+def plot_probmap(prob_map: torch.Tensor, class_names: List[str], savepath: str):
+    """
+    prob map (C, H, W)
+    """
+
+    # Ensure prob_map is a numpy array
+    if not isinstance(prob_map, np.ndarray):
+        prob_map = prob_map.cpu().numpy() if hasattr(prob_map, "cpu") else np.array(prob_map)
+
+    certainty_map = np.max(prob_map, axis=0)
+    certainty_map = np.where(certainty_map < 0.5, 0.5, certainty_map)
+    cmaps = ["Blues", "Reds", "Greens"]
+
+    fig, axs = plt.subplots(2, 2, figsize=(11.6, 10))
+    axs_flat = axs.ravel()
+    for i in range(3):
+        im = axs_flat[i].imshow(prob_map[i, ...], cmap=cmaps[i], vmin=0, vmax=1)
+        axs_flat[i].axis("off")
+        #fig.colorbar(im, ax=axs_flat[i], fraction=0.036, pad=0.0)
+    
+    im = axs_flat[3].imshow(certainty_map, cmap="inferno", vmin=0.5, vmax=1)
+    axs_flat[3].axis("off")
+    plt.subplots_adjust(left=0.0, bottom=0.0, right=1.0, top=1.0, wspace=0.0, hspace=0.00)
+    plt.savefig(savepath, dpi=300)
+    plt.close(fig)
+    
+
+
+def plot_multiclass_pred(prob_map: torch.Tensor, savepath: str):
+    """
+    prob map (C, H, W) without background channel
+
+    Plot the multiclass prediction (unfiltered by non-root-mask)
+    """
+
+    # Ensure prob_map is a numpy array
+    if not isinstance(prob_map, np.ndarray):
+        prob_map = prob_map.cpu().numpy() if hasattr(prob_map, "cpu") else np.array(prob_map)
+    
+    pred_map = np.argmax(prob_map, axis=0)
+    colors = {
+        0: (0, 0, 255),       # blue
+        1: (255, 0, 0),       # red
+        2: (0, 255, 0),       # green
+    }
+
+    # Create new RGB image and apply mapping
+    h, w = pred_map.shape
+    rgb_img = np.zeros((h, w, 3), dtype=np.uint8)
+    for k, color in colors.items():
+        mask = pred_map == k
+        rgb_img[mask] = color
+
+    if savepath is not None:
+        Image.fromarray(rgb_img).save(savepath)
+    
 
 
 def plot_multiclass_segmentation(image_list: list, predicted_list: list,

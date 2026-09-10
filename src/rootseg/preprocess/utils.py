@@ -323,6 +323,7 @@ def rem_tape(img: np.ndarray, mask_list: List[str], L1_name: str, tube: str) -> 
     y_mask *= 5
     x_mask *= 5
     y_mask -= H//2
+
     # In case the mask width is too large, crop it - assumes that the mask is black everywhere where no tape
     if mask_keep.shape[1] > (img.shape[1]) // 2:
         mask = mask_keep[:, :(img.shape[1]) // 2]
@@ -362,7 +363,11 @@ def applyCLAHE(img: np.ndarray, clahe: cv2.CLAHE) -> np.ndarray:
 
 
 def add_reference_pixels(img) -> np.ndarray:
-    """ By default places a single green pixel in the middle 1000px from right border"""
+    """ 
+    By default places a single green pixel in the middle 1000px from right border
+    
+    NOTE: This was intended as a method to track alignment shifts in the timeseries, however it has not been used
+    """
     img[img.shape[0]//2, -1000, :] = (0, 255, 0)
     return img
 
@@ -397,7 +402,7 @@ def remove_scannoise(img: np.ndarray) -> np.ndarray:
     
     # remove column mean
     mean = np.nanmean(img_copy, axis=(0, 1), keepdims=True)
-    # suppress RuntimeWarning: Mean of empty slice -> due to mask / non-concerning
+    # suppress RuntimeWarning: Mean of empty slice -> due to mask / non-concerning warning -- suppress
     with warnings.catch_warnings(): 
         warnings.simplefilter("ignore", category=RuntimeWarning)
         colmean = np.nanmean(img_copy, axis=0, keepdims=True)
@@ -429,7 +434,7 @@ def contrast_brightness_normalization(img: np.ndarray) -> np.ndarray:
     blue_pixels = img.copy()[blue_mask]
     mask[blue_mask] = 0
 
-    # reference values
+    # fixed reference values - empirically chosen by P.Möhl
     ref_contrast = 21
     ref_brightness = 90
 

@@ -1,3 +1,7 @@
+"""
+This script contains the Augmenter class used for augmenting training images 
+"""
+
 import numpy as np
 import torch
 from torchvision.transforms import ColorJitter

@@ -169,6 +169,7 @@ class DataLogger:
             Train and Val metrics as per-class plot (in case of multiclass training)
         """
 
+        # Set plotting layout
         plt.style.use("ggplot")
         plt.rcParams.update({
             "font.family": "serif",

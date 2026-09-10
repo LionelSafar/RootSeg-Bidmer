@@ -1,5 +1,5 @@
 """
-Contains all NN modules
+This script contains all NN modules
 """
 
 import torch
@@ -50,7 +50,7 @@ class TransformerBlock(nn.Module):
             batch_first=True,
             device="cpu"
         )
-        self.norm = nn.LayerNorm(dim)
+        self.norm1 = nn.LayerNorm(dim)
         self.mlp = nn.Sequential(
             nn.Linear(dim, mult_factor*dim),
             nn.SiLU(),
@@ -58,7 +58,7 @@ class TransformerBlock(nn.Module):
         )
     
     def forward(self, x):
-        # Adjust format for torch's multihead attention module and use self attention with residual
+        # Adjust format to match torch's multihead attention module and use self attention with residual
         B, C, H, W = x.shape
         x = x.flatten(2).transpose(1, 2) # (B, H*W, C) = (B, L, C)
         residual = x  
@@ -67,7 +67,7 @@ class TransformerBlock(nn.Module):
 
         # MLP with residual
         residual = x
-        x = self.norm(x)
+        x = self.norm1(x)
         x = self.mlp(x)
         x = residual + x   
 

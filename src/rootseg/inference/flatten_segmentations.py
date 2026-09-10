@@ -1,5 +1,7 @@
 """
-A modified version of split_depths.py in case no splitting is performed - also tracks image size as .csv
+A modified version of split_depths.py in case no depth splitting is performed
+The script puts all images into a single folder for RhizoVision and also tracks image size as a separate .csv
+file
 """
 
 import os
@@ -25,7 +27,7 @@ from rich.progress import (
 def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
     """Return a list of tuples (processed_paths, segmented_paths) for a project folder"""
     processed_path = os.path.join(path, "preprocessed")
-    segmented_path = os.path.join(path, "segmentation", "binary_roots")
+    segmented_path = os.path.join(path, "segmentation") # ,"binary_roots"
 
     processed_paths = glob.glob(os.path.join(processed_path, "**", "*.tiff"), recursive=True)
     processed_paths.extend(glob.glob(os.path.join(processed_path, "**", "*.png"), recursive=True))
@@ -72,6 +74,7 @@ def worker_process(path) -> Dict:
     if "_T1_" in os.path.basename(out): 
         #NOTE: T1 we neglect the area loss due to a masked out Agrostis root, as it should barely 
         # affects any other root but the mask includes a significant area of soil
+        # this tube does not have a tube mask - only need to consider black borders to the right..
         cutoff = 3 * W // 4
         img_section = img[:, cutoff:, :]
         black_area = np.sum(np.all(img_section == [0, 0, 0], axis=2))
@@ -108,9 +111,9 @@ def get_checkpoints(args, image_stack):
 
 def main(args):
     """Main file"""
-    img_stack = get_image_stack(args.data_path)
+    img_stack = get_image_stack(args.path)
     N = len(img_stack)
-    args.outpath = os.path.join(args.data_path, "segmented_flattened")
+    args.outpath = os.path.join(args.path, "segmented_flattened")
     os.makedirs(args.outpath, exist_ok=True)
 
     # Initialise results, load previous checkpoint
@@ -161,7 +164,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", type=str, help="path to the data basefolder")
+    parser.add_argument("--path", type=str, help="path to the data basefolder (not the segmented folder!)")
 
     Image.MAX_IMAGE_PIXELS = 200000000 # Avoid DecompressionBombWarning from PIL
 

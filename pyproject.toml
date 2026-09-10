@@ -4,10 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rootseg"
-version = "0.1.0"
-description = "Root image preprocessing and segmentation tools"
-requires-python = ">=3.9"
-
+version = "0.1"
+description = "Root image preprocessing and segmentation"
+requires-python = ">=3.9,<3.14"
+authors = [
+    {name = "Lionel Safar"}
+]
 dependencies = [
     "numpy",
     "torch",
@@ -23,7 +25,6 @@ dependencies = [
     "pandas",
     "matplotlib",
     "rich",
-    "argparse",
     "h5py",
 ]
 

@@ -201,12 +201,6 @@ if __name__ == "__main__":
         help="The format to rename the files to. - Einzelarten or Bidmer"
     )
     parser.add_argument(
-        "--orientation", 
-        action="store_true", 
-        default=False,
-        help="Whether to include N/S orientation to the tube"
-    )
-    parser.add_argument(
         "--dry_run", 
         action="store_true", 
         default=False,

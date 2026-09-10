@@ -1,3 +1,8 @@
+"""
+This script contains the dataset classes for the ML pipeline.
+
+"""
+
 import math
 from typing import Tuple, Iterator, List
 
@@ -34,7 +39,7 @@ def read_images(
             img = img[..., np.newaxis]
         if annots: # currently case with GIMP images
             if img.shape[2] > 1:
-                img = img[..., :3]
+                img = img[..., :3] # ensure no alpha channel - if alpha, the differing values won't affect the binary threshold
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 img = (img > 0.5).astype(np.uint8) * 255
                 img = img[..., np.newaxis]

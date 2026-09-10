@@ -1,8 +1,11 @@
 """
 Plot PR Curves of a trained binary segmenter model (only UNet class supported).
-NOTE: The performance of threshold between ~0.2 and 0.8 is almost identical, which led to keep 0.5 as default
+
+NOTE: The performance of threshold between ~0.2 and 0.8 has been almost identical on all cases,
+which led to keep 0.5 as default
 for the final model.
 """
+
 import os
 import glob
 import argparse
@@ -15,6 +18,7 @@ import numpy as np
 
 from rootseg.training.models import UNet
 from rootseg.training.datasets import TrainDataset_torch, ValDataset_torch, PrefetchWrapper, seed_worker
+from rootseg.training.training import morphological_gradient
 
 @torch.no_grad()
 def plot_multiclass_pr_curves(
@@ -26,21 +30,28 @@ def plot_multiclass_pr_curves(
     model.eval()
     all_probs = []
     all_labels = []
+    all_masks = []
 
     # Gather all output probabilities and labels on cpu
     for images, labels in loader:
         logits = model(images)
         probs = torch.sigmoid(logits)
+
+        masks = morphological_gradient(labels).cpu().numpy()
+        masks = (1.0 - masks)
+        all_masks.append(masks)
         all_probs.append(probs.cpu().numpy())
         all_labels.append(labels.cpu().numpy())
+    all_masks = np.concatenate(all_masks, axis=0)
     all_probs = np.concatenate(all_probs, axis=0)  # (N, C, H, W)
     all_labels = np.concatenate(all_labels, axis=0)  # (N, H, W)
     C = all_probs.shape[1]
 
     # Get PR curve
+    y_masks = all_masks.ravel().astype(np.bool)
     y_true = all_labels.ravel().astype(np.uint8)
     y_score = all_probs.ravel()
-    precisions, recalls, thresholds = precision_recall_curve(y_true, y_score)
+    precisions, recalls, thresholds = precision_recall_curve(y_true[y_masks], y_score[y_masks])
     ap = average_precision_score(y_true, y_score)
 
     # Plot PR curve
@@ -142,8 +153,8 @@ def main(args):
     os.makedirs(save_dir, exist_ok=True)
 
     # Plot PR curves
-    plot_multiclass_pr_curves(model, val_loader, save_dir, "train")
-    plot_multiclass_pr_curves(model, train_loader, save_dir, "val")
+    plot_multiclass_pr_curves(model, train_loader, save_dir, "train")
+    plot_multiclass_pr_curves(model, val_loader, save_dir, "val")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

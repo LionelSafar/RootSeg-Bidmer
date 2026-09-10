@@ -2,11 +2,11 @@
 Model Optimisation script. Current version only supports optimisation of the multiclass models, 
 need hyperparameter adjustments + range of variables for single-class model.
 
-Currently Optimizes for
+Currently Optimises for
     - learning rate
     - weight decay
     - alpha for focal loss weighting
-    - gamma for focal loss
+    - gamma for focal loss exponent
 """
 
 import os
@@ -134,6 +134,7 @@ def main(args):
 
         savepath = f"trained_models/optimisation/trial_{trial.number}"
         os.makedirs(savepath, exist_ok=True)
+    
         logger.plot_metrics(path=savepath)
 
         return logger.get_last_F1("Val")

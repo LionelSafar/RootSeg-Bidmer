@@ -23,10 +23,12 @@ import multiprocessing as mp
 import threading
 import traceback
 import logging
-from .utils import *
 from functools import partial
 from torch.utils.data import Dataset
 from itertools import groupby
+
+from rootseg.preprocess.utils import *
+
 
 
 class Process_Tube:
@@ -81,7 +83,7 @@ class Process_Tube:
             masks = os.listdir(mask_path)
             mask_list = [os.path.join(mask_path, mask) for mask in masks]
             self.tube_masks = [mask for mask in mask_list if re.search(rf"{re.escape(tube)}(?=[._])", mask)]
-        else:
+        else:-
             logging.warning(f"No Mask folder detected: {mask_path} - Assuming images without mask!")
             self.tube_masks = None
 
@@ -119,7 +121,7 @@ class Process_Tube:
                     Ltop = [img for img in self.images if img["date"] == date and img["level"] == i]
                     Lbot = [img for img in self.images if img["date"] == date and img["level"] == i+1]
                     if i == 1 and len(Ltop) != 1:
-                        raise ValueError(f"{self.tube}: Multiple or No L1 image registered for {date} - Please manually check!")
+                        raise ValueError(f"{self.tube}: Multiple or No L1 image registered for {date} - Please check manually!")
                     # In case of top image, remove tape if mask is present
                     else: 
                         path = os.path.join(self.tube_folder, Ltop[0]["filename"])
@@ -165,7 +167,7 @@ class Process_Tube:
                 if len(imgs) != 1:
                     logging.error(f"{self.tube}: No or multiple images found at {date}:\n" +
                         "\n".join(img["filename"] for img in imgs) +
-                        "-- image is being skipped withour raising ERROR!")
+                        "-- image is being skipped without raising ERROR!")
                     continue
                 path = os.path.join(self.tube_folder, imgs[0]["filename"])
                 new_name = re.sub(r"L\d+", "L0", imgs[0]["filename"])
@@ -242,7 +244,7 @@ class Process_Tube:
             # Enhance image
             img = remove_scannoise(img)
 
-            # save blue mask including bright regions + tape
+            # save blue mask including overexposed regions + tape
             blue_mask = (
                 (img[..., 0] == 255) &      
                 (img[..., 1] == 0) &      
@@ -274,14 +276,14 @@ class Process_Tube:
 
 
 def process_tube(tube, args, progress_queue):
-    """Initialise Tube class and process"""
+    """Initialise Tube class and process a tube"""
     pipeline = Process_Tube(tube, args, progress_queue)
     pipeline.process()
 
 
 def manage_progress(progress_queue, progress_ui, all_done_event):
     """
-    Progress Manager, runs as separate Thread to communicate with worker tube
+    Progress Manager, runs as a separate thread to communicate with worker tube
     """
     active_tasks: dict[str, TaskID] = {}
 
@@ -374,7 +376,7 @@ def processor(args):
 
     #cpu_count = mp.cpu_count()
     #num_workers = min(num_tubes, cpu_count - 1 if cpu_count > 1 else 1)
-    num_workers = 5 # Limit to 5 workers - threshold for us is disk reading, increasing mp does not accelerate the process
+    num_workers = 5 # Limit to 5 workers - our personal threshold is disk reading speed, increasing mp does not accelerate the process
 
     # Initialise Multiprocessing and worker UI
     manager = mp.Manager()

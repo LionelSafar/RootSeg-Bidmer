@@ -3,6 +3,8 @@ Image segmentation pipeline. Allows binary and multiclass segmentation.
 
 """
 import os
+import re
+from pathlib import Path
 import math
 import queue
 import threading
@@ -29,7 +31,25 @@ from rich.progress import (
 )
 
 from rootseg.training.models import UNet, SwinT_UNet, SwinB_UNet
-from rootseg.inference.visualisations import visualize_multiclass, vis_seg_rgb
+from rootseg.inference.visualisations import visualize_multiclass, vis_seg_rgb, plot_probmap, plot_multiclass_pred
+def parse_metadata(entry):
+    path = Path(entry["relative"])   # <-- FIX HERE
+    
+    name = path.stem
+    
+    pattern = r"T(\d+).*?(\d{4}\.\d{2}\.\d{2})_(\d{6})_(\d+)"
+    match = re.search(pattern, name)
+    
+    if not match:
+        # return something sortable instead of None
+        return (float("inf"), "", "", float("inf"))
+    
+    treatment = int(match.group(1))
+    date = match.group(2)
+    time = match.group(3)
+    slice_id = int(match.group(4))
+    
+    return (treatment, date, time, slice_id)
 
 
 def get_image_paths(base_path: str) -> List[Dict[str, str]]:
@@ -95,7 +115,7 @@ class TiledImageDataset(IterableDataset):
     def _image_exist(self, path_info: Dict[str, str]) -> bool:
         """Check if a segmented image already exists to an input image"""
         savename = path_info["relative"].replace(".tiff", "_segmented.png")
-        if os.path.exists(os.path.join(self.savepath, savename)):
+        if os.path.exists(os.path.join(self.savepath, savename)) or os.path.exists(os.path.join(self.savepath, 'output', savename)):
             return True
         else:
             return False
@@ -170,11 +190,12 @@ class TiledImageDataset(IterableDataset):
             
             # Pad large image to account for borders during segmentation
             orig_h, orig_w = img.shape[0], img.shape[1]
-            h_tiles = math.ceil(orig_h / self.outsize)
-            w_tiles = math.ceil(orig_w / self.outsize)
+            h_tiles = math.ceil(orig_h / self.stepsize)
+            w_tiles = math.ceil(orig_w / self.stepsize)
 
-            pad_h = h_tiles * self.outsize - orig_h
-            pad_w = w_tiles * self.outsize - orig_w
+            pad_h = (h_tiles-1) * self.stepsize + self.outsize - orig_h
+            pad_w = (w_tiles-1) * self.stepsize + self.outsize - orig_w
+
             img_padded = np.pad(
                 img,
                 ((self.pad, self.pad + pad_h), (self.pad, self.pad + pad_w), (0, 0)),
@@ -183,8 +204,8 @@ class TiledImageDataset(IterableDataset):
             total_tiles = h_tiles * w_tiles
             
             # Yield tiles with coords and image information for reassembly
-            for y in range(0, h_tiles * self.outsize, self.outsize):
-                for x in range(0, w_tiles * self.outsize, self.outsize):
+            for y in range(0, h_tiles * self.stepsize, self.stepsize):
+                for x in range(0, w_tiles * self.stepsize, self.stepsize):
                     tile = img_padded[y:y+self.tilesize, x:x+self.tilesize, :]
                     yield {
                         "tile": self._preprocess_tile(tile),
@@ -288,8 +309,11 @@ class Reconstructor(threading.Thread):
                         "canvas": torch.zeros((pred_tile.shape[0], canvas_h, canvas_w), dtype=torch.float32), 
                         "count": 0 # count towards finishing the canvas
                     }
+
                     with Image.open(info["segmentation_path"]) as seg:
+                        seg = seg.convert("L") # In case of RGB segmentation -> transform to grayscale..
                         seg = self.to_tensor(seg)
+
                         self.segmentations[rel_path] = seg
                 else:
                     self.canvases[rel_path] = {
@@ -300,9 +324,10 @@ class Reconstructor(threading.Thread):
             out_size = pred_tile_cpu.shape[-1]
             x, y = coords[0], coords[1]
             try:
-                self.canvases[rel_path]["canvas"][:, y:y+out_size, x:x+out_size] = pred_tile_cpu
+                self.canvases[rel_path]["canvas"][:, y:y+out_size, x:x+out_size] += pred_tile_cpu
                 if self.overlap:
                     self.count_canvases[rel_path][:, y:y+out_size, x:x+out_size] += 1
+                    arr = (y, y+out_size, x, x+out_size)
             except Exception as e:
                 raise e
             self.canvases[rel_path]["count"] += 1 # increase counter of inserted tiles
@@ -314,9 +339,10 @@ class Reconstructor(threading.Thread):
                     predicted = torch.argmax(prob_map, dim=0).to(torch.int8).unsqueeze(0)
                     predicted += 1 # reserve 0-class for background
                     predicted = predicted[:, :orig_shape[0], :orig_shape[1]]
+                    prob_map = prob_map[:, :orig_shape[0], :orig_shape[1]]
                     final_mask = predicted * segmap # set non-roots to 0 - background
                 else:
-                    predicted = (self.canvases[rel_path]["canvas"] > 0.5)
+                    predicted = (self.canvases[rel_path]["canvas"] > 0.4)
                     final_mask = predicted.to(torch.uint8) * 255
                     final_mask = final_mask[:, :orig_shape[0], :orig_shape[1]]
 
@@ -325,8 +351,6 @@ class Reconstructor(threading.Thread):
                     final_mask = filter_small_components(final_mask)
                 else:
                     final_mask = final_mask.numpy().astype(np.uint8)
-
-
                 # Construct save path
                 save_name = os.path.splitext(os.path.basename(rel_path))[0] + "_segmented.png"
                 save_name = rel_path.replace(".tiff", "_segmented.png")
@@ -335,22 +359,28 @@ class Reconstructor(threading.Thread):
                 base = os.path.splitext(os.path.basename(rel_path))[0]
                 save_name = base + "_segmented.png"
                 if self.class_names:
+                    prob_predmap_path = os.path.join(self.save_dir, "prob_predmap", rel_dir)
                     predmap_path = os.path.join(self.save_dir, "predmap", rel_dir)
-                    vispath = os.path.join(self.save_dir, "visual", rel_dir)
+                    #vispath = os.path.join(self.save_dir, "visual", rel_dir)
                     rgbpath = os.path.join(self.save_dir, "rgb", rel_dir)
                     save_path = os.path.join(self.save_dir, "output", rel_dir)
 
                     os.makedirs(save_path, exist_ok=True)
-                    os.makedirs(vispath, exist_ok=True)
+                    #os.makedirs(vispath, exist_ok=True)
                     os.makedirs(rgbpath, exist_ok=True)
                     os.makedirs(predmap_path, exist_ok=True)
+                    os.makedirs(prob_predmap_path, exist_ok=True)
+                    
 
-                    vis_save = os.path.join(vispath, save_name)
+                    #vis_save = os.path.join(vispath, save_name)
                     rgb_save = os.path.join(rgbpath, save_name)
                     pred_save = os.path.join(predmap_path, save_name)
+                    prob_pred_save = os.path.join(prob_predmap_path, save_name)
 
-                    visualize_multiclass(predicted.squeeze(0), self.class_names, savepath = pred_save)
-                    visualize_multiclass(final_mask.squeeze(0), self.class_names, savepath = vis_save)
+                    if self.class_names == ["Carex", "Graminoids", "Herbs"]:
+                        plot_probmap(prob_map, self.class_names, savepath = prob_pred_save)
+                        plot_multiclass_pred(prob_map, savepath = pred_save)
+                    #visualize_multiclass(final_mask.squeeze(0), self.class_names, savepath = vis_save)
                     vis_seg_rgb(final_mask.squeeze(0), rgb_save)
                 else:
                     save_path = os.path.join(self.save_dir, rel_dir)
@@ -380,7 +410,7 @@ def run_segmentation(
         segmentation_path: str=None, 
         sizes: Tuple[int, int, int]=(572, 388, 388),
         class_selection: str="roots",
-        model_name: str = "unet",
+        model_name: str="unet",
         batch_size: int=4, 
         num_workers: int=2, 
         filter_components: bool=False,
@@ -440,8 +470,12 @@ def run_segmentation(
 
     # Get list of images to process
     image_paths = get_image_paths(data_path)
+
     if segmentation_path is not None:
         segmentation_paths = get_image_paths(segmentation_path)
+        image_paths = sorted(image_paths, key=parse_metadata)
+        segmentation_paths = sorted(segmentation_paths, key=parse_metadata)
+
     else:
         segmentation_paths = None
     if not image_paths:
@@ -476,7 +510,8 @@ def run_segmentation(
         # Get count of already processed images for progress bar
         processed_count = sum(
             1 for path_info in image_paths
-            if os.path.exists(os.path.join(save_path, path_info["relative"].replace(".tiff", "_segmented.png")))
+            if (os.path.exists(os.path.join(save_path, path_info["relative"].replace(".tiff", "_segmented.png")))
+                or os.path.exists(os.path.join(save_path, "output", path_info["relative"].replace(".tiff", "_segmented.png"))))
         )
         task_id = progress.add_task(
             "Segmenting images...", 
@@ -484,7 +519,7 @@ def run_segmentation(
             completed=processed_count
         ) 
 
-        result_queue = queue.Queue()
+        result_queue = queue.Queue(maxsize=64)
         reconstructor = Reconstructor(
             result_queue, 
             save_path, 
@@ -509,7 +544,7 @@ def run_segmentation(
                     predicted_tiles = torch.sigmoid(logits)
                 for i in range(tiles.shape[0]):
                     info = {k: v[i] for k, v in batch["image_info"].items()}
-                    result_item = (predicted_tiles[i], batch["coords"][i], info)
+                    result_item = (predicted_tiles[i], batch["coords"][i], info) # maybe move to cpu here
                     result_queue.put(result_item)
                     
         result_queue.put(None) 
@@ -597,8 +632,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_workers", 
         type=int, 
-        default=2, 
+        default=4, 
         help="Number of CPU workers for data loading."
+    )
+    parser.add_argument(
+        "--skip_binary",
+        type=str,
+        default=None,
+        help="If no running binary required - provide the path to the binary images, no binary segmenter needed here"
     )
     args = parser.parse_args()
 
@@ -622,30 +663,34 @@ if __name__ == "__main__":
     # Multiclass segmentation 
     else:
         # Create binary rootmaps
-        segpath = os.path.join(args.save_path, "segmentation", "binary_roots")
         savepath = os.path.join(args.save_path, "segmentation")
-        run_segmentation(
-            data_path=args.data_path, 
-            model_path=args.segmenter_model, 
-            save_path=segpath, 
-            sizes=(572, 388, 388),
-            model_name="unet",
-            batch_size=args.batch_size, 
-            num_workers=args.num_workers,
-            class_selection="roots"
-        )
+        if args.skip_binary is not None:
+            segpath = os.path.join(args.skip_binary)
+        else:
+            segpath = os.path.join(args.save_path, "segmentation", "binary_roots")
 
-        # Ensure memory is cleaned for the second run
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect() 
+            run_segmentation(
+                data_path=args.data_path, 
+                model_path=args.segmenter_model, 
+                save_path=segpath, 
+                sizes=(572, 388, 388),
+                model_name="unet",
+                batch_size=args.batch_size, 
+                num_workers=args.num_workers,
+                class_selection="roots"
+            )
+
+            # Ensure memory is cleaned for the second run
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect() 
         
         # multiclass segmentation with rootmap
         run_segmentation(
             data_path=args.data_path, 
-            model_path=args.model_path, 
+            model_path=args.model_path,
             save_path=savepath,
-            sizes=(768, 644, 500),
+            sizes=(768, 644, 384),
             model_name=args.model,
             class_selection=args.class_selection,
             batch_size=args.batch_size,

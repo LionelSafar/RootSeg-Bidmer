@@ -1,3 +1,8 @@
+"""
+This script contains the training loops including loss functions.
+"""
+
+
 from typing import Literal, Tuple
 
 import torch

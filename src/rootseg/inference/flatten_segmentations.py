@@ -27,7 +27,7 @@ from rich.progress import (
 def get_image_stack(path: str) -> List[Tuple[str, str, str]]:
     """Return a list of tuples (processed_paths, segmented_paths) for a project folder"""
     processed_path = os.path.join(path, "preprocessed")
-    segmented_path = os.path.join(path, "segmentation") # ,"binary_roots"
+    segmented_path = os.path.join(path, "segmentation", "binary_roots")
 
     processed_paths = glob.glob(os.path.join(processed_path, "**", "*.tiff"), recursive=True)
     processed_paths.extend(glob.glob(os.path.join(processed_path, "**", "*.png"), recursive=True))
@@ -163,7 +163,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--path", type=str, help="path to the data basefolder (not the segmented folder!)")
 
     Image.MAX_IMAGE_PIXELS = 200000000 # Avoid DecompressionBombWarning from PIL

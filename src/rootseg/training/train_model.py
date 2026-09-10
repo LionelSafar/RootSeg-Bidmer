@@ -211,7 +211,7 @@ def train_model(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         "--basedir", 
         type=str, 
@@ -279,7 +279,7 @@ if __name__ == "__main__":
         "--gamma", 
         type=float, 
         default=1.2,
-        help="factor for focal loss"
+        help="exponent for focal loss"
     )
     parser.add_argument(
         "--identifier", 

@@ -583,7 +583,10 @@ def filter_small_components(binary_mask: np.ndarray|torch.Tensor, min_size: int=
 if __name__ == "__main__":
 
     # Parse input
-    parser = argparse.ArgumentParser(description="PyTorch Tiled Inference Pipeline")
+    parser = argparse.ArgumentParser(
+        description="PyTorch Tiled Inference Pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument(
         "--data_path", 
         type=str, 
@@ -621,7 +624,7 @@ if __name__ == "__main__":
         "--save_path", 
         type=str, 
         default=None,
-        help="Directory to save segmented masks."
+        help="Directory to save segmented masks. If None is provided, by default saves parallell to the processed folder"
     )
     parser.add_argument(
         "--batch_size", 
@@ -649,7 +652,7 @@ if __name__ == "__main__":
     
     # binary segmentation
     if args.class_selection == "roots":
-        savepath = os.path.join(args.save_path, "segmentation")
+        savepath = os.path.join(args.save_path, "segmentation", "binary_roots")
         run_segmentation(
             data_path=args.data_path, 
             model_path=args.model_path, 

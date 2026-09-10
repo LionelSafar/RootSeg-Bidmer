@@ -112,7 +112,10 @@ def main(args):
                     return
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Select subimages from the raw data")
+    argparser = argparse.ArgumentParser(
+        description="Select subimages from the raw data",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     argparser.add_argument(
         "--folder", 
         type=str,

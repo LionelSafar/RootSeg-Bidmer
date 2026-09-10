@@ -183,7 +183,9 @@ def rename_and_order(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Rename files in a folder to a specific format.")
+    parser = argparse.ArgumentParser(
+        description="Rename files in a folder to a specific format.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         "--folder", 
         type=str,
@@ -204,7 +206,7 @@ if __name__ == "__main__":
         "--dry_run", 
         action="store_true", 
         default=False,
-        help="Whether to run the script without actually moving the files."
+        help="Whether to run the script without actually moving the files. It just prints what would be moved where"
     )
     parser.add_argument(
         "--copy", 

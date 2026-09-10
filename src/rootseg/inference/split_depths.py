@@ -259,7 +259,7 @@ def main(args):
     print(f"Metrics saved to {outfile}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         "--data_path", 
         type=str, 
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--depth_mask_folder",
         type=str,
-        help="folder with depth masks per tube"
+        help="folder with depth masks per tube - if not provided, it looks for it in the 'Data/' folder"
     )
     parser.add_argument(
         "--classification",

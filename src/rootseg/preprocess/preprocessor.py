@@ -83,7 +83,8 @@ class Process_Tube:
             masks = os.listdir(mask_path)
             mask_list = [os.path.join(mask_path, mask) for mask in masks]
             self.tube_masks = [mask for mask in mask_list if re.search(rf"{re.escape(tube)}(?=[._])", mask)]
-        else:-
+            print('tube masks found:', self.tube_masks)
+        else: 
             logging.warning(f"No Mask folder detected: {mask_path} - Assuming images without mask!")
             self.tube_masks = None
 
@@ -427,7 +428,9 @@ def processor(args):
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Preprocessing pipeline for root segmentation")
+    argparser = argparse.ArgumentParser(
+        description="Preprocessing pipeline for root segmentation",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     argparser.add_argument(
         "--raw_folder", 
         type=str,

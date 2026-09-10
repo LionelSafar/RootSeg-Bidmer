@@ -1,2 +1,10 @@
 __pycache__/
 trained_models/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Build / packaging
+build/
+dist/
+overlaid/

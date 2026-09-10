@@ -165,7 +165,10 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluation script")
+    parser = argparse.ArgumentParser(
+        description="Evaluation script",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument(
         "--path", 
         type=str, 
